@@ -77,6 +77,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
+    #[cfg(feature = "pdfium")]
     try_link_pdfium().unwrap();
     windows::build! {
         Windows::Win32::Graphics::Gdi::{
