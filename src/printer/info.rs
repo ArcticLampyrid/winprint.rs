@@ -1,6 +1,8 @@
 use crate::utils::wchar;
-use crate::bindings::Windows::Win32::{Foundation::*, Graphics::Printing::*};
-use std::ffi::{OsString, OsStr};
+use scopeguard::defer;
+use std::alloc::{alloc, dealloc, Layout};
+use std::ffi::{OsStr, OsString};
+use std::mem;
 use std::ptr;
 #[derive(Clone, Debug)]
 pub struct PrinterInfo {
@@ -25,37 +27,37 @@ impl PrinterInfo {
                 0,
                 &mut bytes_needed,
                 &mut count_returned,
-            )
-        };
-        let mut buffer = Vec::<u8>::with_capacity(bytes_needed as usize);
-        unsafe {
+            );
+            let buffer_layout = Layout::from_size_align_unchecked(
+                bytes_needed as usize,
+                mem::align_of::<PRINTER_INFO_4W>(),
+            );
+            let buffer = alloc(buffer_layout);
+            defer! {
+                dealloc(buffer, buffer_layout);
+            }
             EnumPrintersW(
                 flags,
                 name,
                 level,
-                buffer.as_mut_ptr(),
+                buffer,
                 bytes_needed,
                 &mut bytes_needed,
                 &mut count_returned,
-            )
-        };
-        unsafe { buffer.set_len(bytes_needed as usize) };
-        let mut result = Vec::<PrinterInfo>::with_capacity(count_returned as usize);
-        for i in 0..count_returned {
-            let info = unsafe {
-                std::ptr::read_unaligned(
-                    (buffer.as_mut_ptr() as *const PRINTER_INFO_4W).offset(i as isize),
-                )
-            };
-            let os_name = wchar::from_wide_ptr(info.pPrinterName.0);
-            result.push(Self {
-                name: os_name.to_string_lossy().into_owned(),
-                os_server: wchar::from_wide_ptr(info.pServerName.0),
-                os_attributes: info.Attributes,
-                os_name
-            })
+            );
+            let mut result = Vec::<PrinterInfo>::with_capacity(count_returned as usize);
+            for i in 0..count_returned {
+                let info = &*(buffer as *const PRINTER_INFO_4W).offset(i as isize);
+                let os_name = wchar::from_wide_ptr(info.pPrinterName.0);
+                result.push(Self {
+                    name: os_name.to_string_lossy().into_owned(),
+                    os_server: wchar::from_wide_ptr(info.pServerName.0),
+                    os_attributes: info.Attributes,
+                    os_name,
+                });
+            }
+            result
         }
-        result
     }
 
     /// Get a reference to the printer info's name.
