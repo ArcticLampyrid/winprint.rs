@@ -21,21 +21,18 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
     target_path.push("pdfium_binaries");
     fs::create_dir_all(target_path.as_path())?;
     let has_bin = fs::read_dir(target_path.as_path())?.any(|x| {
-        bin_ext
-            .iter()
-            .find(|s| {
-                x.as_ref()
-                    .ok()
-                    .and_then(|d| {
-                        if Path::new(d.file_name().as_os_str()).extension() == Some(s) {
-                            Some(())
-                        } else {
-                            None
-                        }
-                    })
-                    .is_some()
-            })
-            .is_some()
+        bin_ext.iter().any(|s| {
+            x.as_ref()
+                .ok()
+                .and_then(|d| {
+                    if Path::new(d.file_name().as_os_str()).extension() == Some(s) {
+                        Some(())
+                    } else {
+                        None
+                    }
+                })
+                .is_some()
+        })
     });
     if !has_bin {
         let build_id = 4660;
@@ -52,7 +49,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
             if file.header().entry_type() == EntryType::Regular {
                 let file_path = file.path()?;
                 let file_extension = file_path.extension();
-                let is_bin = bin_ext.iter().find(|s| file_extension == Some(s)).is_some();
+                let is_bin = bin_ext.iter().any(|s| file_extension == Some(s));
                 if is_bin {
                     if let Some(file_name_raw) = file_path.file_name() {
                         let mut file_name_str = file_name_raw.to_string_lossy();
@@ -79,18 +76,4 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 fn main() {
     #[cfg(feature = "pdfium")]
     try_link_pdfium().unwrap();
-    windows::build! {
-        Windows::Win32::Graphics::Gdi::{
-            CreateDCW, DeleteDC, GetDeviceCaps, SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, HDC,
-            LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY,
-            PHYSICALWIDTH,
-        },
-        Windows::Win32::Graphics::Printing::*,
-        Windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize},
-        Windows::Win32::Storage::Xps::*,
-        Windows::Win32::Storage::Xps::Printing::*,
-        Windows::Win32::Foundation::CloseHandle,
-        Windows::Win32::System::Threading::{CreateEventW, SetEvent, WaitForSingleObject},
-        Windows::Win32::System::WindowsProgramming::INFINITE
-    };
 }
