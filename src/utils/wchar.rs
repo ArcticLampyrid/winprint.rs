@@ -18,8 +18,5 @@ pub fn from_wide_ptr(ptr: *const u16) -> OsString {
 }
 
 pub fn to_wide_chars<P: AsRef<OsStr>>(s: P) -> Vec<u16> {
-    s.as_ref()
-        .encode_wide()
-        .chain(Some(0).into_iter())
-        .collect()
+    s.as_ref().encode_wide().chain(Some(0)).collect()
 }

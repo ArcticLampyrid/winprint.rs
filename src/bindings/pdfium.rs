@@ -1,4 +1,4 @@
-#![allow(warnings, unused)]
+#![allow(warnings, clippy::all, unused)]
 
 use windows::Win32::Graphics::Gdi::HDC;
 /*
