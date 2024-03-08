@@ -1,6 +1,5 @@
 use crate::bindings::pdfium::*;
 use crate::printer::FilePrinter;
-use crate::printer::FilePrinterError;
 use crate::printer::PrinterInfo;
 use crate::utils::pdfium::PdfiumCustomDocument;
 use crate::utils::pdfium::PdfiumGuard;
@@ -9,6 +8,7 @@ use scopeguard::defer;
 use std::path::Path;
 use std::ptr;
 use std::{fs::File, mem};
+use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::Graphics::Gdi::{
@@ -17,6 +17,15 @@ use windows::{
     },
     Win32::Storage::Xps::*,
 };
+
+#[derive(Error, Debug)]
+pub enum PdfiumPrinterError {
+    #[error("Failed to open printer")]
+    FailedToOpenPrinter,
+    #[error("File I/O error: {0}")]
+    FileIOError(std::io::Error),
+}
+
 pub struct PdfiumPrinter {
     printer: PrinterInfo,
 }
@@ -28,7 +37,9 @@ impl PdfiumPrinter {
 }
 
 impl FilePrinter for PdfiumPrinter {
-    fn print(&self, path: &Path) -> std::result::Result<(), FilePrinterError> {
+    type Options = ();
+    type Error = PdfiumPrinterError;
+    fn print(&self, path: &Path, _options: ()) -> std::result::Result<(), PdfiumPrinterError> {
         unsafe {
             let hdc_print = CreateDCW(
                 None,
@@ -37,7 +48,7 @@ impl FilePrinter for PdfiumPrinter {
                 None,
             );
             if hdc_print.is_invalid() {
-                return Err(FilePrinterError::FailedToOpenPrinter);
+                return Err(PdfiumPrinterError::FailedToOpenPrinter);
             }
             defer! {
                 DeleteDC(hdc_print);
@@ -53,9 +64,9 @@ impl FilePrinter for PdfiumPrinter {
             StartDocW(hdc_print, &doc_info);
             {
                 let _pdfium_guard = PdfiumGuard::guard();
-                let mut file = File::open(path).map_err(|_| FilePrinterError::FailedToCreateJob)?;
+                let mut file = File::open(path).map_err(PdfiumPrinterError::FileIOError)?;
                 let mut file_delegation = PdfiumCustomDocument::new(&mut file)
-                    .map_err(|_| FilePrinterError::FailedToOpenPrinter)?;
+                    .map_err(PdfiumPrinterError::FileIOError)?;
                 let document = FPDF_LoadCustomDocument(file_delegation.as_mut(), ptr::null());
                 defer! {
                     FPDF_CloseDocument(document);

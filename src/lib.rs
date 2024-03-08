@@ -13,6 +13,7 @@ mod tests {
         println!("{:#?}", printers);
         let my_printer = printers.iter().find(|x| x.name() == "pdfFactory Pro").unwrap();
         let xps = XpsPrinter::new(my_printer.clone());
-        xps.print(Path::new("D:\\1.xps")).unwrap();
+        xps.print(Path::new("D:\\1.xps"), Default::default())
+            .unwrap();
     }
 }
