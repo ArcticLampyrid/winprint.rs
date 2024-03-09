@@ -1,6 +1,8 @@
 use crate::bindings::pdfium::*;
 use crate::printer::FilePrinter;
 use crate::printer::PrinterInfo;
+use crate::ticket::PrintTicket;
+use crate::ticket::ToDevModeError;
 use crate::utils::pdfium::PdfiumCustomDocument;
 use crate::utils::pdfium::PdfiumGuard;
 use crate::utils::wchar;
@@ -24,6 +26,8 @@ pub enum PdfiumPrinterError {
     FailedToOpenPrinter,
     #[error("File I/O error: {0}")]
     FileIOError(std::io::Error),
+    #[error("Print Ticker Error: {0}")]
+    PrintTicketError(ToDevModeError),
 }
 
 pub struct PdfiumPrinter {
@@ -37,15 +41,22 @@ impl PdfiumPrinter {
 }
 
 impl FilePrinter for PdfiumPrinter {
-    type Options = ();
+    type Options = PrintTicket;
     type Error = PdfiumPrinterError;
-    fn print(&self, path: &Path, _options: ()) -> std::result::Result<(), PdfiumPrinterError> {
+    fn print(
+        &self,
+        path: &Path,
+        options: PrintTicket,
+    ) -> std::result::Result<(), PdfiumPrinterError> {
         unsafe {
+            let dev_mode = options
+                .to_dev_mode(&self.printer)
+                .map_err(PdfiumPrinterError::PrintTicketError)?;
             let hdc_print = CreateDCW(
                 None,
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 None,
-                None,
+                Some(dev_mode.as_ptr() as *const _),
             );
             if hdc_print.is_invalid() {
                 return Err(PdfiumPrinterError::FailedToOpenPrinter);

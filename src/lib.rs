@@ -1,6 +1,7 @@
 mod bindings;
-mod utils;
 pub mod printer;
+pub mod ticket;
+mod utils;
 #[cfg(test)]
 mod tests {
     use crate::printer::PrinterInfo;

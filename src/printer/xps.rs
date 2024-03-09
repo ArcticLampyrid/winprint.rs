@@ -1,7 +1,9 @@
 use crate::printer::FilePrinter;
 use crate::printer::PrinterInfo;
+use crate::ticket::PrintTicket;
 use crate::utils::wchar;
 use scopeguard::defer;
+use std::mem::MaybeUninit;
 use std::path::Path;
 use std::ptr;
 use thiserror::Error;
@@ -22,6 +24,8 @@ pub enum XpsPrinterError {
     FailedToCreateObjectFactory(windows::core::Error),
     #[error("Failed to start job: {0}")]
     FailedToStartJob(windows::core::Error),
+    #[error("Failed to apply print ticket: {0}")]
+    FailedToApplyPrintTicket(windows::core::Error),
     #[error("Failed to write document: {0}")]
     FailedToWriteDocument(windows::core::Error),
     #[error("Stream is not available")]
@@ -39,9 +43,9 @@ impl XpsPrinter {
 }
 
 impl FilePrinter for XpsPrinter {
-    type Options = ();
+    type Options = PrintTicket;
     type Error = XpsPrinterError;
-    fn print(&self, path: &Path, _options: ()) -> std::result::Result<(), XpsPrinterError> {
+    fn print(&self, path: &Path, options: PrintTicket) -> std::result::Result<(), XpsPrinterError> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             defer! {
@@ -56,6 +60,7 @@ impl FilePrinter for XpsPrinter {
                 CoCreateInstance(&XpsOMObjectFactory, None, CLSCTX_ALL)
                     .map_err(XpsPrinterError::FailedToCreateObjectFactory)?;
             let mut document_stream = Option::<IXpsPrintJobStream>::None;
+            let mut print_ticket_stream = Option::<IXpsPrintJobStream>::None;
             StartXpsPrintJob(
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 PCWSTR(wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref())).as_ptr()),
@@ -65,9 +70,24 @@ impl FilePrinter for XpsPrinter {
                 &[],
                 ptr::null_mut(),
                 ptr::addr_of_mut!(document_stream),
-                ptr::null_mut(),
+                ptr::addr_of_mut!(print_ticket_stream),
             )
             .map_err(XpsPrinterError::FailedToStartJob)?;
+            let print_ticket_stream =
+                print_ticket_stream.ok_or(XpsPrinterError::StreamNotAvailable)?;
+            let print_ticket = options.get_xml();
+            let mut print_ticket_written = MaybeUninit::<u32>::uninit();
+            print_ticket_stream
+                .Write(
+                    print_ticket.as_ptr() as *const _,
+                    print_ticket.len() as u32,
+                    Some(print_ticket_written.as_mut_ptr()),
+                )
+                .ok()
+                .map_err(XpsPrinterError::FailedToApplyPrintTicket)?;
+            print_ticket_stream
+                .Close()
+                .map_err(XpsPrinterError::FailedToApplyPrintTicket)?;
             let document_stream = document_stream.ok_or(XpsPrinterError::StreamNotAvailable)?;
             let xps_package = xps_factory
                 .CreatePackageFromFile(PCWSTR(wchar::to_wide_chars(path).as_ptr()), false)
