@@ -44,11 +44,11 @@ impl PrintTicketBuilder {
         })
     }
 
-    pub fn merge(&mut self, xml: &str) -> Result<(), PrintTicketBuilderError> {
+    pub fn merge(&mut self, delta: impl Into<PrintTicket>) -> Result<(), PrintTicketBuilderError> {
         unsafe {
             let base = SHCreateMemStream(Some(self.xml.as_ref()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
-            let delta = SHCreateMemStream(Some(xml.as_ref()))
+            let delta = SHCreateMemStream(Some(delta.into().get_xml().as_bytes()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
             let result =
                 SHCreateMemStream(None).ok_or(PrintTicketBuilderError::StreamNotAllocated)?;

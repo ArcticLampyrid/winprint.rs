@@ -9,6 +9,7 @@ mod tests {
     use crate::printer::PrinterInfo;
     use crate::printer::XpsPrinter;
     use crate::ticket::PrintCapabilities;
+    use crate::ticket::PrintTicket;
     use crate::ticket::PrintTicketBuilder;
     use ctor::{ctor, dtor};
     use std::path::Path;
@@ -116,7 +117,7 @@ mod tests {
 		</psf:Option>
 	</psf:Feature>
 </psf:PrintTicket>"#;
-        builder.merge(delta).unwrap();
+        builder.merge(PrintTicket::from_xml(delta)).unwrap();
         println!("{}", builder.build().unwrap().into_xml());
     }
 }

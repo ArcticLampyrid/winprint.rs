@@ -49,6 +49,10 @@ pub enum ToDevModeError {
 }
 
 impl PrintTicket {
+    pub fn from_xml(xml: impl Into<String>) -> Self {
+        Self { xml: xml.into() }
+    }
+
     pub fn into_xml(self) -> String {
         self.xml
     }
