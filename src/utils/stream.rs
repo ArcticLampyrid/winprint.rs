@@ -1,7 +1,4 @@
-use windows::Win32::{
-    Foundation::ERROR_NO_UNICODE_TRANSLATION,
-    System::Com::{IStream, STREAM_SEEK_END, STREAM_SEEK_SET},
-};
+use windows::Win32::System::Com::{IStream, STREAM_SEEK_END, STREAM_SEEK_SET};
 
 pub fn read_com_stream(stream: &IStream) -> Result<Vec<u8>, windows::core::Error> {
     let mut size = 0;
@@ -22,10 +19,9 @@ pub fn read_com_stream(stream: &IStream) -> Result<Vec<u8>, windows::core::Error
     }
 }
 
-/// Copies the contents of a COM stream to a string.
-/// If the stream contains invalid UTF-8, an error will be returned.
-pub fn copy_com_stream_to_string(
-    dest: &mut String,
+/// Copies the contents of a COM stream to a vector.
+pub fn copy_com_stream_to_vec(
+    dest: &mut Vec<u8>,
     stream: &IStream,
 ) -> Result<(), windows::core::Error> {
     let mut size = 0;
@@ -42,15 +38,7 @@ pub fn copy_com_stream_to_string(
                 Some(&mut n_read_bytes),
             )
             .ok()?;
-        if std::str::from_utf8(std::slice::from_raw_parts(
-            dest.as_ptr(),
-            n_read_bytes as usize,
-        ))
-        .is_err()
-        {
-            return Err(ERROR_NO_UNICODE_TRANSLATION.into());
-        }
-        dest.as_mut_vec().set_len(n_read_bytes as usize);
+        dest.set_len(n_read_bytes as usize);
         Ok(())
     }
 }

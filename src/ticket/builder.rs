@@ -1,7 +1,7 @@
 use super::{PrintTicket, DEFAULT_PRINT_TICKET_XML};
 use crate::{
     printer::PrinterInfo,
-    utils::{stream::copy_com_stream_to_string, wchar},
+    utils::{stream::copy_com_stream_to_vec, wchar},
 };
 use thiserror::Error;
 use windows::{
@@ -16,7 +16,7 @@ use windows::{
 };
 
 pub struct PrintTicketBuilder {
-    xml: String,
+    xml: Vec<u8>,
     provider: HPTPROVIDER,
 }
 
@@ -39,7 +39,7 @@ impl PrintTicketBuilder {
                 .map_err(PrintTicketBuilderError::OpenProviderFailed)?
         };
         Ok(Self {
-            xml: DEFAULT_PRINT_TICKET_XML.to_string(),
+            xml: DEFAULT_PRINT_TICKET_XML.into(),
             provider,
         })
     }
@@ -48,7 +48,7 @@ impl PrintTicketBuilder {
         unsafe {
             let base = SHCreateMemStream(Some(self.xml.as_ref()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
-            let delta = SHCreateMemStream(Some(delta.into().get_xml().as_bytes()))
+            let delta = SHCreateMemStream(Some(delta.into().get_xml()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
             let result =
                 SHCreateMemStream(None).ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
@@ -67,14 +67,14 @@ impl PrintTicketBuilder {
                     win32_error,
                 )
             })?;
-            copy_com_stream_to_string(&mut self.xml, &result)
+            copy_com_stream_to_vec(&mut self.xml, &result)
                 .map_err(PrintTicketBuilderError::DecodePrintTicketFailed)?;
         }
         Ok(())
     }
 
     pub fn build(mut self) -> Result<PrintTicket, PrintTicketBuilderError> {
-        let xml = std::mem::replace(&mut self.xml, String::with_capacity(0));
+        let xml = std::mem::take(&mut self.xml);
         Ok(PrintTicket { xml })
     }
 }

@@ -23,13 +23,13 @@ use windows::{
 
 #[derive(Clone, Debug)]
 pub struct PrintTicket {
-    pub(crate) xml: String,
+    pub(crate) xml: Vec<u8>,
 }
 
 impl Default for PrintTicket {
     fn default() -> Self {
         Self {
-            xml: DEFAULT_PRINT_TICKET_XML.to_string(),
+            xml: DEFAULT_PRINT_TICKET_XML.into(),
         }
     }
 }
@@ -49,15 +49,15 @@ pub enum ToDevModeError {
 }
 
 impl PrintTicket {
-    pub fn from_xml(xml: impl Into<String>) -> Self {
+    pub fn from_xml(xml: impl Into<Vec<u8>>) -> Self {
         Self { xml: xml.into() }
     }
 
-    pub fn into_xml(self) -> String {
+    pub fn into_xml(self) -> Vec<u8> {
         self.xml
     }
 
-    pub fn get_xml(&self) -> &str {
+    pub fn get_xml(&self) -> &[u8] {
         &self.xml
     }
 
@@ -69,9 +69,8 @@ impl PrintTicket {
                 let _ = PTCloseProvider(provider);
             }
 
-            let xml = self.get_xml();
-            let stream =
-                SHCreateMemStream(Some(xml.as_ref())).ok_or(ToDevModeError::StreamNotAllocated)?;
+            let stream = SHCreateMemStream(Some(self.get_xml()))
+                .ok_or(ToDevModeError::StreamNotAllocated)?;
 
             let mut dev_mode_size = 0;
             let mut dev_mode_data = std::ptr::null_mut();
