@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<psf:PrintTicket
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework"
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1">
+    <psf:ParameterInit name="psk:PageMediaSizeMediaSizeWidth">
+        <psf:Value xsi:type="xsd:integer">2540</psf:Value>
+    </psf:ParameterInit>
+    <psf:ParameterInit name="psk:PageMediaSizeMediaSizeHeight">
+        <psf:Value xsi:type="xsd:integer">4233</psf:Value>
+    </psf:ParameterInit>
+    <psf:Feature name="psk:PageMediaSize">
+        <psf:Option name="psk:CustomMediaSize">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:ParameterRef name="psk:PageMediaSizeMediaSizeWidth" />
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:ParameterRef name="psk:PageMediaSizeMediaSizeHeight" />
+            </psf:ScoredProperty>
+        </psf:Option>
+    </psf:Feature>
+</psf:PrintTicket>

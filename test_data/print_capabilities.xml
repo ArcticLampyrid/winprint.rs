@@ -1,0 +1,682 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<psf:PrintCapabilities
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1"
+    xmlns:ns0000="http://schemas.microsoft.com/windows/printing/oemdriverpt/Generic___Text_Only_10_0_22621_3235_"
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:ParameterDef name="ns0000:PageDevmodeSnapshot">
+        <psf:Property name="psf:DataType">
+            <psf:Value xsi:type="xsd:QName">xsd:string</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:UnitType">
+            <psf:Value xsi:type="xsd:string">base64</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:DefaultValue">
+            <psf:Value xsi:type="xsd:string">
+                dwBpAG4AcAByAGkAbgB0AC0AcgBzAC0AbgB1AGwAbAAtAHAAcgBpAG4AdABlAHIAAAAAAAAAAAAAAAAAAAAAAAEEAwbcAAwDQ++ABQEACQCaCzQIZAABAA8AWAIBAAEAWAICAAEAQQA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAgAAAAEAAAD/////AAAAAAAAAAAAAAAAAAAAAERJTlUiALAADAMAALqRc8oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACwAAAAU01USgAAAAAQAKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Mandatory">
+            <psf:Value xsi:type="xsd:QName">psk:Optional</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MinLength">
+            <psf:Value xsi:type="xsd:integer">0</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MaxLength">
+            <psf:Value xsi:type="xsd:integer">174760</psf:Value>
+        </psf:Property>
+    </psf:ParameterDef>
+    <psf:Feature name="psk:DocumentCollate">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">分页复制(T)</psf:Value>
+        </psf:Property>
+        <psf:Option name="psk:Collated" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">是(Y)</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:Uncollated" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">否(N)</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+    <psf:ParameterDef name="psk:JobCopiesAllDocuments">
+        <psf:Property name="psf:DataType">
+            <psf:Value xsi:type="xsd:QName">xsd:integer</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:UnitType">
+            <psf:Value xsi:type="xsd:string">copies</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Multiple">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MaxValue">
+            <psf:Value xsi:type="xsd:integer">9999</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MinValue">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:DefaultValue">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Mandatory">
+            <psf:Value xsi:type="xsd:QName">psk:Unconditional</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">份数</psf:Value>
+        </psf:Property>
+    </psf:ParameterDef>
+    <psf:Feature name="psk:JobNUpAllDocumentsContiguously">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">每张纸打印的页数(S)</psf:Value>
+        </psf:Property>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">1</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">1</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psf:IdentityOption">
+                <psf:Value xsi:type="xsd:string">True</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">2</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">2</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">4</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">4</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">6</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">6</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">9</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">9</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Option constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">16</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">16</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Feature name="psk:PresentationDirection">
+            <psf:Property name="psf:SelectionType">
+                <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">每张纸打印的页数布局</psf:Value>
+            </psf:Property>
+            <psf:Option name="psk:RightBottom" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">向右然后向下</psf:Value>
+                </psf:Property>
+            </psf:Option>
+            <psf:Option name="psk:BottomRight" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">向下然后向右</psf:Value>
+                </psf:Property>
+            </psf:Option>
+            <psf:Option name="psk:LeftBottom" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">向左然后向下</psf:Value>
+                </psf:Property>
+            </psf:Option>
+            <psf:Option name="psk:BottomLeft" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">向下然后向左</psf:Value>
+                </psf:Property>
+            </psf:Option>
+        </psf:Feature>
+        <psf:Feature name="ns0000:Borders">
+            <psf:Property name="psf:SelectionType">
+                <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">绘制边框(W)</psf:Value>
+            </psf:Property>
+            <psf:Option name="ns0000:Off" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">否(N)</psf:Value>
+                </psf:Property>
+            </psf:Option>
+            <psf:Option name="ns0000:On" constrained="psk:None">
+                <psf:Property name="psk:DisplayName">
+                    <psf:Value xsi:type="xsd:string">是(Y)</psf:Value>
+                </psf:Property>
+            </psf:Option>
+        </psf:Feature>
+    </psf:Feature>
+    <psf:Feature name="psk:PageMediaSize">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">纸张大小</psf:Value>
+        </psf:Property>
+        <psf:Option name="psk:NorthAmericaLetter" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">215900</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">279400</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaTabloid" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">279400</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">431800</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">Tabloid</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:LEDGER" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">431800</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">279400</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">Ledger</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaLegal" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">215900</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">355600</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">法律专用纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOA3" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">297000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">420000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">A3</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOA4" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">210000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">297000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">A4</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:JISB4" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">257000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">364000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">B4 (JIS)</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:JISB5" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">182000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">257000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">B5 (JIS)</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:OtherMetricFolio" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">215900</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">330200</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">Folio</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaNumber9Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">98425</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">225425</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 #9</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaNumber10Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">104775</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">241300</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 #10</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaNumber11Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">114300</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">263525</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 #11</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaNumber12Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">120650</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">279400</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 #12</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaNumber14Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">127000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">292100</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 #14</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISODLEnvelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">110000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">220000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 DL</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOC5Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">162000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">229000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 C5</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOC3Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">324000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">458000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 C3</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOC4Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">229000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">324000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 C4</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOC6Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">114000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">162000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 C6</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOC6C5Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">114000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">229000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 C65</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOB4Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">250000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">353000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 B4</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOB5Envelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">176000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">250000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 B5</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:ENV_B6" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">176000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">125000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封 B6</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:OtherMetricItalianEnvelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">110000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">230000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">信封</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaPersonalEnvelope" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">92075</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">165100</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">6 3/4 信封</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:FANFOLD_US" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">377825</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">279400</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">美国标准 Fanfold</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaGermanStandardFanfold" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">215900</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">304800</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">德国标准 Fanfold</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:ISOB4" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">250000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">353000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">B4 (ISO)</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaLetterExtra" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">241300</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">304800</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">特大信纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:NorthAmericaLegalExtra" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">241300</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">381000</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">特大法律专用纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:FOLIO" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">215900</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">330200</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">对折纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:ENV_MONARCH" constrained="psk:None">
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:Value xsi:type="xsd:integer">98383</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:Value xsi:type="xsd:integer">190500</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">Envelope Monarch</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:CustomMediaSize" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">用户定义大小</psf:Value>
+            </psf:Property>
+            <psf:ScoredProperty name="psk:MediaSizeWidth">
+                <psf:ParameterRef name="psk:PageMediaSizeMediaSizeWidth" />
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:MediaSizeHeight">
+                <psf:ParameterRef name="psk:PageMediaSizeMediaSizeHeight" />
+            </psf:ScoredProperty>
+        </psf:Option>
+    </psf:Feature>
+    <psf:ParameterDef name="psk:PageMediaSizeMediaSizeWidth">
+        <psf:Property name="psf:DataType">
+            <psf:Value xsi:type="xsd:QName">xsd:integer</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:UnitType">
+            <psf:Value xsi:type="xsd:string">microns</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Multiple">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MaxValue">
+            <psf:Value xsi:type="xsd:integer">1371600</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MinValue">
+            <psf:Value xsi:type="xsd:integer">2540</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:DefaultValue">
+            <psf:Value xsi:type="xsd:integer">2540</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Mandatory">
+            <psf:Value xsi:type="xsd:QName">psk:Conditional</psf:Value>
+        </psf:Property>
+    </psf:ParameterDef>
+    <psf:ParameterDef name="psk:PageMediaSizeMediaSizeHeight">
+        <psf:Property name="psf:DataType">
+            <psf:Value xsi:type="xsd:QName">xsd:integer</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:UnitType">
+            <psf:Value xsi:type="xsd:string">microns</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Multiple">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MaxValue">
+            <psf:Value xsi:type="xsd:integer">1371600</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MinValue">
+            <psf:Value xsi:type="xsd:integer">4233</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:DefaultValue">
+            <psf:Value xsi:type="xsd:integer">4233</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Mandatory">
+            <psf:Value xsi:type="xsd:QName">psk:Conditional</psf:Value>
+        </psf:Property>
+    </psf:ParameterDef>
+    <psf:Feature name="psk:JobInputBin">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">纸张来源</psf:Value>
+        </psf:Property>
+        <psf:Option name="psk:AutoSelect" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">自动选择</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:Option3" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">连续送纸 - 没有间隙</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:Option1" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">单张纸</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="ns0000:Option2" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">连续送纸 - 有间隙</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+    <psf:Feature name="psk:PageResolution">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">分辨率</psf:Value>
+        </psf:Property>
+        <psf:Option name="ns0000:Option1" constrained="psk:None">
+            <psf:ScoredProperty name="psk:ResolutionX">
+                <psf:Value xsi:type="xsd:integer">600</psf:Value>
+            </psf:ScoredProperty>
+            <psf:ScoredProperty name="psk:ResolutionY">
+                <psf:Value xsi:type="xsd:integer">600</psf:Value>
+            </psf:ScoredProperty>
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">120 x 6 DPI</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+    <psf:Feature name="psk:PageOrientation">
+        <psf:Property name="psf:SelectionType">
+            <psf:Value xsi:type="xsd:QName">psk:PickOne</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">方向</psf:Value>
+        </psf:Property>
+        <psf:Option name="psk:Portrait" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">纵向</psf:Value>
+            </psf:Property>
+        </psf:Option>
+        <psf:Option name="psk:Landscape" constrained="psk:None">
+            <psf:Property name="psk:DisplayName">
+                <psf:Value xsi:type="xsd:string">横向</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+    <psf:Property name="psk:PageImageableSize">
+        <psf:Property name="psk:ImageableSizeWidth">
+            <psf:Value xsi:type="xsd:integer">209973</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:ImageableSizeHeight">
+            <psf:Value xsi:type="xsd:integer">296968</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:ImageableArea">
+            <psf:Property name="psk:OriginWidth">
+                <psf:Value xsi:type="xsd:integer">0</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:OriginHeight">
+                <psf:Value xsi:type="xsd:integer">0</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:ExtentWidth">
+                <psf:Value xsi:type="xsd:integer">209973</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:ExtentHeight">
+                <psf:Value xsi:type="xsd:integer">296333</psf:Value>
+            </psf:Property>
+        </psf:Property>
+    </psf:Property>
+</psf:PrintCapabilities>

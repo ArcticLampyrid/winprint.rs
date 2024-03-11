@@ -7,6 +7,7 @@ version = "0.1.0"
 lazy_static = "1.4.0"
 scopeguard = "1.1"
 thiserror = "1.0"
+fmt-derive = "0.1"
 xml = "0.8"
 
 [dependencies.windows]

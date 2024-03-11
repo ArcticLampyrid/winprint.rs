@@ -1,3 +1,4 @@
+use super::{ParameterInit, ParsePrintSchemaError, PrintCapabilitiesDocument, PrintSchemaDocument};
 use crate::{
     printer::PrinterInfo,
     utils::{stream::read_com_stream, wchar},
@@ -14,9 +15,7 @@ use windows::{
         UI::Shell::SHCreateMemStream,
     },
 };
-
-pub const NS_PRINT_SCHEMA: &str =
-    "http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework";
+use xml::name::OwnedName;
 
 #[derive(Error, Debug)]
 pub enum FetchPrintCapabilitiesError {
@@ -28,10 +27,14 @@ pub enum FetchPrintCapabilitiesError {
     CannotGetPrintCapabilities(String, windows::core::Error),
     #[error("Failed to read stream: {0}")]
     ReadStreamFailed(windows::core::Error),
+    #[error("Failed to parse print capabilities: {0}")]
+    ParseError(ParsePrintSchemaError),
 }
 
 #[derive(Clone, Debug)]
-pub struct PrintCapabilities {}
+pub struct PrintCapabilities {
+    pub document: PrintCapabilitiesDocument,
+}
 
 impl PrintCapabilities {
     pub fn fetch_xml(info: &PrinterInfo) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
@@ -60,6 +63,51 @@ impl PrintCapabilities {
             Ok(data)
         }
     }
+
+    pub fn fetch(info: &PrinterInfo) -> Result<PrintCapabilities, FetchPrintCapabilitiesError> {
+        let xml = Self::fetch_xml(info)?;
+        let document = PrintSchemaDocument::parse_as_capabilities(xml)
+            .map_err(FetchPrintCapabilitiesError::ParseError)?;
+        Ok(PrintCapabilities { document })
+    }
+
+    pub fn default_parameters(&self) -> impl Iterator<Item = ParameterInit> + '_ {
+        self.document.parameter_defs.iter().filter_map(|param_def| {
+            param_def
+                .default_value()
+                .map(|default_value| ParameterInit {
+                    name: param_def.name.clone(),
+                    value: default_value.clone(),
+                })
+        })
+    }
+
+    pub fn default_parameters_for<'a>(
+        &'a self,
+        filters: &'a [OwnedName],
+    ) -> impl Iterator<Item = ParameterInit> + 'a {
+        let mut filters = filters
+            .iter()
+            .map(|x| (&x.namespace, &x.local_name))
+            .collect::<Vec<_>>();
+        filters.sort_unstable();
+        self.document
+            .parameter_defs
+            .iter()
+            .filter(move |param_def| {
+                filters
+                    .binary_search(&(&param_def.name.namespace, &param_def.name.local_name))
+                    .is_ok()
+            })
+            .filter_map(move |param_def| {
+                param_def
+                    .default_value()
+                    .map(|default_value| ParameterInit {
+                        name: param_def.name.clone(),
+                        value: default_value.clone(),
+                    })
+            })
+    }
 }
 
 #[cfg(test)]
@@ -70,5 +118,11 @@ mod tests {
     fn test_fetch_xml() {
         let test_printer = get_test_printer();
         PrintCapabilities::fetch_xml(&test_printer).unwrap();
+    }
+
+    #[test]
+    fn test_fetch_xml_and_parse() {
+        let test_printer = get_test_printer();
+        PrintCapabilities::fetch(&test_printer).unwrap();
     }
 }
