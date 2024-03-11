@@ -61,3 +61,14 @@ impl PrintCapabilities {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PrintCapabilities;
+    use crate::tests::get_test_printer;
+    #[test]
+    fn test_fetch_xml() {
+        let test_printer = get_test_printer();
+        PrintCapabilities::fetch_xml(&test_printer).unwrap();
+    }
+}

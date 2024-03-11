@@ -86,3 +86,31 @@ impl Drop for PrintTicketBuilder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PrintTicketBuilder;
+    use crate::{tests::get_test_printer, ticket::PrintTicket};
+
+    #[test]
+    fn merge_simple_ticket() {
+        let test_printer = get_test_printer();
+        let mut builder = PrintTicketBuilder::new(&test_printer).unwrap();
+        let delta = r#"<psf:PrintTicket xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1" xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:Feature name="psk:PageMediaSize">
+		<psf:Option name="psk:NorthAmericaTabloid">
+			<psf:ScoredProperty name="psk:MediaSizeWidth">
+				<psf:Value xsi:type="xsd:integer">279400</psf:Value>
+			</psf:ScoredProperty>
+			<psf:ScoredProperty name="psk:MediaSizeHeight">
+				<psf:Value xsi:type="xsd:integer">431800</psf:Value>
+			</psf:ScoredProperty>
+			<psf:Property name="psk:DisplayName">
+				<psf:Value xsi:type="xsd:string">Tabloid</psf:Value>
+			</psf:Property>
+		</psf:Option>
+	</psf:Feature>
+</psf:PrintTicket>"#;
+        builder.merge(PrintTicket::from_xml(delta)).unwrap();
+    }
+}

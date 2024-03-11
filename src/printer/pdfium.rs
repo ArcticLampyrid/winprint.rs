@@ -113,3 +113,18 @@ impl FilePrinter for PdfiumPrinter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PdfiumPrinter;
+    use crate::{printer::FilePrinter, tests::get_test_printer};
+    use std::path::Path;
+
+    #[test]
+    fn print_simple_pdf_document() {
+        let test_printer = get_test_printer();
+        let pdf = PdfiumPrinter::new(test_printer);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        pdf.print(path.as_path(), Default::default()).unwrap();
+    }
+}

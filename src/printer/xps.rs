@@ -103,3 +103,18 @@ impl FilePrinter for XpsPrinter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::XpsPrinter;
+    use crate::{printer::FilePrinter, tests::get_test_printer};
+    use std::path::Path;
+
+    #[test]
+    fn print_simple_xps_document() {
+        let test_printer = get_test_printer();
+        let xps = XpsPrinter::new(test_printer);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        xps.print(path.as_path(), Default::default()).unwrap();
+    }
+}
