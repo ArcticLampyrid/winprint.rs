@@ -115,6 +115,24 @@ impl PropertyValue {
             PropertyValue::Unknown(n, _) => n.clone(),
         }
     }
+    pub fn string(&self) -> Option<&str> {
+        match self {
+            PropertyValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+    pub fn integer(&self) -> Option<i32> {
+        match self {
+            PropertyValue::Integer(i) => Some(*i),
+            _ => None,
+        }
+    }
+    pub fn qualified_name(&self) -> Option<&OwnedName> {
+        match self {
+            PropertyValue::QName(q) => Some(q),
+            _ => None,
+        }
+    }
 }
 
 impl PrintFeatureOption {
@@ -138,6 +156,16 @@ impl ScoredProperty {
         }
         result
     }
+    pub fn value_with<'a>(&'a self, parameters: &'a [ParameterInit]) -> Option<&'a PropertyValue> {
+        if let Some(ref parameter_ref) = self.parameter_ref {
+            parameters
+                .iter()
+                .find(|x| x.name == *parameter_ref)
+                .map(|x| &x.value)
+        } else {
+            self.value.as_ref()
+        }
+    }
 }
 
 impl From<PrintTicketDocument> for PrintSchemaDocument {
@@ -149,5 +177,88 @@ impl From<PrintTicketDocument> for PrintSchemaDocument {
 impl From<PrintCapabilitiesDocument> for PrintSchemaDocument {
     fn from(value: PrintCapabilitiesDocument) -> Self {
         PrintSchemaDocument::PrintCapabilities(value)
+    }
+}
+
+pub trait WithScoredProperties {
+    fn scored_properties(&self) -> &[ScoredProperty];
+    fn get_scored_property(&self, name: &str, namespace: Option<&str>) -> Option<&ScoredProperty> {
+        self.scored_properties().iter().find(|x| {
+            x.name.as_ref().map_or(false, |x| {
+                x.local_name == name && x.namespace_ref() == namespace
+            })
+        })
+    }
+}
+
+impl WithScoredProperties for PrintFeatureOption {
+    fn scored_properties(&self) -> &[ScoredProperty] {
+        &self.scored_properties
+    }
+}
+
+impl WithScoredProperties for ScoredProperty {
+    fn scored_properties(&self) -> &[ScoredProperty] {
+        &self.scored_properties
+    }
+}
+
+pub trait WithProperties {
+    fn properties(&self) -> &[Property];
+    fn get_property(&self, name: &str, namespace: Option<&str>) -> Option<&Property> {
+        self.properties()
+            .iter()
+            .find(|x| x.name.local_name == name && x.name.namespace_ref() == namespace)
+    }
+}
+
+impl WithProperties for PrintSchemaDocument {
+    fn properties(&self) -> &[Property] {
+        match self {
+            PrintSchemaDocument::PrintCapabilities(x) => x.properties(),
+            PrintSchemaDocument::PrintTicket(x) => x.properties(),
+        }
+    }
+}
+
+impl WithProperties for PrintCapabilitiesDocument {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for PrintTicketDocument {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for ParameterDef {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for PrintFeature {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for PrintFeatureOption {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for ScoredProperty {
+    fn properties(&self) -> &[Property] {
+        &self.properties
+    }
+}
+
+impl WithProperties for Property {
+    fn properties(&self) -> &[Property] {
+        &self.properties
     }
 }

@@ -1,4 +1,7 @@
-use super::{ParameterInit, ParsePrintSchemaError, PrintCapabilitiesDocument, PrintSchemaDocument};
+use super::{
+    PageMediaSize, ParameterInit, ParsePrintSchemaError, PrintCapabilitiesDocument,
+    PrintFeatureOption, PrintSchemaDocument, NS_PSK,
+};
 use crate::{
     printer::PrinterInfo,
     utils::{stream::read_com_stream, wchar},
@@ -106,6 +109,38 @@ impl PrintCapabilities {
                         name: param_def.name.clone(),
                         value: default_value.clone(),
                     })
+            })
+    }
+
+    pub fn options_for_feature<'a>(
+        &'a self,
+        feature_name: &'a str,
+        namespace: Option<&'a str>,
+    ) -> impl Iterator<Item = &PrintFeatureOption> + 'a {
+        self.document
+            .features
+            .iter()
+            .filter(move |x| {
+                x.name.local_name == feature_name && x.name.namespace_ref() == namespace
+            })
+            .flat_map(|x| x.options.iter())
+    }
+
+    fn collect_default_parameters_for_option(
+        &self,
+        option: &PrintFeatureOption,
+    ) -> Vec<ParameterInit> {
+        self.default_parameters_for(option.parameters_dependent().as_slice())
+            .collect()
+    }
+
+    pub fn page_media_size(&self) -> impl Iterator<Item = PageMediaSize> + '_ {
+        self.options_for_feature("PageMediaSize", Some(NS_PSK))
+            .map(|option| {
+                PageMediaSize::new(
+                    option.clone(),
+                    self.collect_default_parameters_for_option(option),
+                )
             })
     }
 }

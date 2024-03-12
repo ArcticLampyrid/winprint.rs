@@ -1,4 +1,4 @@
-use super::DEFAULT_PRINT_TICKET_XML;
+use super::{PrintTicketDocument, XmlDocumentRoot, DEFAULT_PRINT_TICKET_XML};
 use crate::{printer::PrinterInfo, utils::wchar};
 use scopeguard::defer;
 use std::ptr;
@@ -136,6 +136,14 @@ impl PrintTicket {
             }
 
             Ok(buffer)
+        }
+    }
+}
+
+impl From<PrintTicketDocument> for PrintTicket {
+    fn from(value: PrintTicketDocument) -> Self {
+        Self {
+            xml: value.to_xml(),
         }
     }
 }

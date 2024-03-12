@@ -1,4 +1,7 @@
 mod builder;
+mod media_size_tuple;
+mod page_media_size;
+mod predefined_media_name;
 mod print_capabilities;
 mod print_schema;
 mod print_schema_parser;
@@ -6,6 +9,9 @@ mod print_schema_serializer;
 mod print_ticket;
 
 pub use builder::*;
+pub use media_size_tuple::*;
+pub use page_media_size::*;
+pub use predefined_media_name::*;
 pub use print_capabilities::*;
 pub use print_schema::*;
 pub use print_schema_parser::*;
