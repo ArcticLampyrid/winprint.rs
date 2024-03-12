@@ -448,6 +448,81 @@ impl PrintSchemaDocument {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn wrong_type_should_return_error() {
+        let xml = include_bytes!("../../test_data/print_ticket.xml");
+        let result = super::PrintSchemaDocument::parse_as_capabilities(xml.into());
+        assert!(matches!(
+            result,
+            Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
+        ));
+
+        let xml = include_bytes!("../../test_data/print_capabilities.xml");
+        let result = super::PrintSchemaDocument::parse_as_ticket(xml.into());
+        assert!(matches!(
+            result,
+            Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
+        ));
+    }
+
+    #[test]
+    fn parameter_def_should_not_in_print_ticket() {
+        let xml = r#"<psf:PrintTicket version="1"
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:ParameterDef name="psk:JobCopiesAllDocuments">
+        <psf:Property name="psf:DataType">
+            <psf:Value xsi:type="xsd:QName">xsd:integer</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:UnitType">
+            <psf:Value xsi:type="xsd:string">copies</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Multiple">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MaxValue">
+            <psf:Value xsi:type="xsd:integer">9999</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:MinValue">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:DefaultValue">
+            <psf:Value xsi:type="xsd:integer">1</psf:Value>
+        </psf:Property>
+        <psf:Property name="psf:Mandatory">
+            <psf:Value xsi:type="xsd:QName">psk:Unconditional</psf:Value>
+        </psf:Property>
+        <psf:Property name="psk:DisplayName">
+            <psf:Value xsi:type="xsd:string">份数</psf:Value>
+        </psf:Property>
+    </psf:ParameterDef>
+</psf:PrintTicket>"#;
+        let result = super::PrintSchemaDocument::parse(xml.into());
+        assert!(matches!(
+            result,
+            Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
+        ));
+    }
+
+    #[test]
+    fn parameter_init_should_not_in_print_capabilities() {
+        let xml = r#"<psf:PrintCapabilities version="1"
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:ParameterInit name="psk:PageMediaSizeMediaSizeWidth">
+        <psf:Value xsi:type="xsd:integer">2540</psf:Value>
+    </psf:ParameterInit>
+</psf:PrintCapabilities>"#;
+        let result = super::PrintSchemaDocument::parse(xml.into());
+        assert!(matches!(
+            result,
+            Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
+        ));
+    }
+
+    #[test]
     fn parse_print_ticket() {
         let xml = include_bytes!("../../test_data/print_ticket.xml");
         let _document = super::PrintSchemaDocument::parse_as_ticket(xml.to_vec()).unwrap();

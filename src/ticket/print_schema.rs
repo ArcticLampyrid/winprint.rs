@@ -262,3 +262,132 @@ impl WithProperties for Property {
         &self.properties
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument, Property,
+        PropertyValue,
+    };
+    use crate::ticket::WithProperties;
+    use xml::name::OwnedName;
+
+    fn new_test_properties() -> Vec<Property> {
+        vec![
+            Property {
+                name: OwnedName::local("Property1"),
+                value: Some(PropertyValue::String("Value1".to_string())),
+                properties: vec![],
+            },
+            Property {
+                name: OwnedName::qualified("Property2", "http://test.namespace/", Some("test")),
+                value: Some(PropertyValue::Integer(2)),
+                properties: vec![],
+            },
+        ]
+    }
+
+    fn check_test_properties(w: &impl WithProperties) {
+        assert_eq!(w.properties().len(), 2);
+
+        // ensure we can get properties
+        assert_eq!(
+            w.get_property("Property1", None)
+                .and_then(|p| p.value.as_ref())
+                .and_then(|v| v.string()),
+            Some("Value1")
+        );
+        assert_eq!(
+            w.get_property("Property2", Some("http://test.namespace/"))
+                .and_then(|p| p.value.as_ref())
+                .and_then(|v| v.integer()),
+            Some(2)
+        );
+
+        // namespace is handled
+        assert!(w
+            .get_property("Property1", Some("http://wrong.namespace/"))
+            .is_none());
+        assert!(w
+            .get_property("Property2", Some("http://wrong.namespace/"))
+            .is_none());
+        assert!(w.get_property("Property2", None).is_none());
+
+        // ensure we can't get properties that don't exist
+        assert!(w.get_property("PROPERTY_NOT_EXIST", None).is_none());
+    }
+
+    #[test]
+    fn get_properties_from_ticket() {
+        let document1: PrintSchemaDocument = PrintTicketDocument {
+            properties: new_test_properties(),
+            parameter_inits: vec![],
+            features: vec![],
+        }
+        .into();
+        check_test_properties(&document1);
+    }
+
+    #[test]
+    fn get_properties_from_capabilities() {
+        let document1: PrintSchemaDocument = PrintCapabilitiesDocument {
+            properties: new_test_properties(),
+            parameter_defs: vec![],
+            features: vec![],
+        }
+        .into();
+        check_test_properties(&document1);
+    }
+
+    #[test]
+    fn get_properties_from_parameter_def() {
+        let parameter_def = super::ParameterDef {
+            name: OwnedName::local("Test"),
+            properties: new_test_properties(),
+        };
+        check_test_properties(&parameter_def);
+    }
+
+    #[test]
+    fn get_properties_from_option() {
+        let option = super::PrintFeatureOption {
+            name: None,
+            scored_properties: vec![],
+            properties: new_test_properties(),
+        };
+        check_test_properties(&option);
+    }
+
+    #[test]
+    fn get_properties_from_feature() {
+        let feature = super::PrintFeature {
+            name: OwnedName::local("Test"),
+            properties: new_test_properties(),
+            options: vec![],
+            features: vec![],
+        };
+        check_test_properties(&feature);
+    }
+
+    #[test]
+    fn get_properties_from_scored_property() {
+        let scored_property = super::ScoredProperty {
+            name: None,
+            parameter_ref: None,
+            value: None,
+            scored_properties: vec![],
+            properties: new_test_properties(),
+        };
+        check_test_properties(&scored_property);
+    }
+
+    #[test]
+    fn get_properties_from_property() {
+        let property = Property {
+            name: OwnedName::local("Test"),
+            value: None,
+            properties: new_test_properties(),
+        };
+        check_test_properties(&property);
+    }
+}

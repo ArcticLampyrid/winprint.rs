@@ -90,7 +90,10 @@ impl Drop for PrintTicketBuilder {
 #[cfg(test)]
 mod tests {
     use super::PrintTicketBuilder;
-    use crate::{tests::get_test_printer, ticket::PrintTicket};
+    use crate::{
+        tests::get_test_printer,
+        ticket::{PrintTicket, PrintTicketBuilderError},
+    };
 
     #[test]
     fn merge_simple_ticket() {
@@ -112,5 +115,18 @@ mod tests {
 	</psf:Feature>
 </psf:PrintTicket>"#;
         builder.merge(PrintTicket::from_xml(delta)).unwrap();
+        let _ticket = builder.build().unwrap();
+    }
+
+    #[test]
+    fn merge_invalid_ticket() {
+        let test_printer = get_test_printer();
+        let mut builder = PrintTicketBuilder::new(&test_printer).unwrap();
+        let delta = r#"This is not a valid print ticket"#;
+        let result = builder.merge(PrintTicket::from_xml(delta));
+        assert!(matches!(
+            result,
+            Err(PrintTicketBuilderError::MergePrintTicketsFailed(..))
+        ));
     }
 }

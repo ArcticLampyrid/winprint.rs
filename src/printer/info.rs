@@ -99,3 +99,24 @@ impl PrinterInfo {
         self.os_attributes & PRINTER_ATTRIBUTE_NETWORK != 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PrinterInfo;
+    use crate::tests::get_test_printer;
+
+    #[test]
+    fn fetch_printer_info() {
+        let _infos = PrinterInfo::all().unwrap();
+    }
+
+    #[test]
+    fn test_printer_should_be_local() {
+        let printer = get_test_printer();
+        assert!(printer.is_local());
+        assert_eq!(printer.is_remote(), false);
+        assert_eq!(printer.os_server(), "");
+        // PRINTER_ATTRIBUTE_LOCAL == 0x00000040
+        assert!(printer.os_attributes() & 0x00000040 != 0);
+    }
+}
