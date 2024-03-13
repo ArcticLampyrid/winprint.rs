@@ -74,6 +74,9 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
-    #[cfg(feature = "pdfium")]
-    try_link_pdfium().unwrap();
+    #[cfg(windows)]
+    {
+        #[cfg(feature = "pdfium")]
+        try_link_pdfium().unwrap();
+    }
 }

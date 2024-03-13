@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 mod bindings;
 pub mod printer;
 pub mod ticket;
