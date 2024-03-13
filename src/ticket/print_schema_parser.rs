@@ -26,6 +26,19 @@ pub enum ParsePrintSchemaError {
     },
 }
 
+pub trait ParsableXmlDocument: Sized {
+    type Error;
+
+    fn parse<R>(reader: &mut EventReader<R>) -> Result<Self, Self::Error>
+    where
+        R: std::io::Read;
+
+    fn parse_from_bytes(xml: impl AsRef<[u8]>) -> Result<Self, Self::Error> {
+        let mut reader = EventReader::new(Cursor::new(xml));
+        Self::parse(&mut reader)
+    }
+}
+
 fn parse_qname(namespace: &Namespace, value: &str) -> OwnedName {
     let prefix_index = value.find(':');
     if let Some(prefix_index) = prefix_index {
@@ -100,9 +113,12 @@ impl PsfValueContext {
     }
 }
 
-impl PrintSchemaDocument {
-    pub fn parse(xml: Vec<u8>) -> Result<PrintSchemaDocument, ParsePrintSchemaError> {
-        let mut parser = EventReader::new(Cursor::new(xml));
+impl ParsableXmlDocument for PrintSchemaDocument {
+    type Error = ParsePrintSchemaError;
+    fn parse<R>(reader: &mut EventReader<R>) -> Result<Self, Self::Error>
+    where
+        R: std::io::Read,
+    {
         let mut depth: usize = 0;
 
         let mut option_name: Option<OwnedName> = None;
@@ -129,7 +145,7 @@ impl PrintSchemaDocument {
         let mut parsed_value: Option<PropertyValue> = None;
 
         loop {
-            let e = match parser.next() {
+            let e = match reader.next() {
                 Ok(e) => e,
                 Err(e) => return Err(ParsePrintSchemaError::InvalidXml(e)),
             };
@@ -146,7 +162,7 @@ impl PrintSchemaDocument {
                             "PrintCapabilities" => {
                                 if depth > 1 {
                                     return Err(ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "PrintCapabilities should be root element"
                                             .to_string(),
                                     });
@@ -159,7 +175,7 @@ impl PrintSchemaDocument {
                             "PrintTicket" => {
                                 if depth > 1 {
                                     return Err(ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "PrintTicket should be root element".to_string(),
                                     });
                                 }
@@ -179,7 +195,7 @@ impl PrintSchemaDocument {
                                 feature_name.push(
                                     parse_name_attribute(&attributes, &namespace).ok_or_else(
                                         || ParsePrintSchemaError::InvalidPrintSchema {
-                                            pos: parser.position(),
+                                            pos: reader.position(),
                                             reason: "Feature name not found".to_string(),
                                         },
                                     )?,
@@ -214,7 +230,7 @@ impl PrintSchemaDocument {
                                 property_name.push(
                                     parse_name_attribute(&attributes, &namespace).ok_or_else(
                                         || ParsePrintSchemaError::InvalidPrintSchema {
-                                            pos: parser.position(),
+                                            pos: reader.position(),
                                             reason: "Property name not found".to_string(),
                                         },
                                     )?,
@@ -231,7 +247,7 @@ impl PrintSchemaDocument {
                                     parse_type_attribute(&attributes, &namespace)
                                 {
                                     value_context.replace(PsfValueContext {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         value: String::new(),
                                         value_type,
                                         namespace,
@@ -240,7 +256,7 @@ impl PrintSchemaDocument {
                             }
                             _ => {
                                 return Err(ParsePrintSchemaError::InvalidPrintSchema {
-                                    pos: parser.position(),
+                                    pos: reader.position(),
                                     reason: format!("Invalid element: {}", name),
                                 })
                             }
@@ -275,7 +291,7 @@ impl PrintSchemaDocument {
 
                                 let parent = parameter_def_container.as_mut().ok_or_else(|| {
                                     ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "ParameterDef cannot be here".to_string(),
                                     }
                                 })?;
@@ -292,7 +308,7 @@ impl PrintSchemaDocument {
                                 // check it, and if not found, return error
                                 let value = parsed_value.take().ok_or_else(|| {
                                     ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "ParameterInit value not found".to_string(),
                                     }
                                 })?;
@@ -300,7 +316,7 @@ impl PrintSchemaDocument {
                                 let parent =
                                     parameter_init_container.as_mut().ok_or_else(|| {
                                         ParsePrintSchemaError::InvalidPrintSchema {
-                                            pos: parser.position(),
+                                            pos: reader.position(),
                                             reason: "ParameterInit cannot be here".to_string(),
                                         }
                                     })?;
@@ -318,7 +334,7 @@ impl PrintSchemaDocument {
 
                                 let parent = feature_containers.last_mut().ok_or_else(|| {
                                     ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "Feature cannot be here".to_string(),
                                     }
                                 })?;
@@ -337,7 +353,7 @@ impl PrintSchemaDocument {
 
                                 let parent = option_containers.last_mut().ok_or_else(|| {
                                     ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "Option cannot be here".to_string(),
                                     }
                                 })?;
@@ -356,7 +372,7 @@ impl PrintSchemaDocument {
                                 let parent =
                                     scored_property_containers.last_mut().ok_or_else(|| {
                                         ParsePrintSchemaError::InvalidPrintSchema {
-                                            pos: parser.position(),
+                                            pos: reader.position(),
                                             reason: "ScoredProperty cannot be here".to_string(),
                                         }
                                     })?;
@@ -375,7 +391,7 @@ impl PrintSchemaDocument {
 
                                 let parent = property_containers.last_mut().ok_or_else(|| {
                                     ParsePrintSchemaError::InvalidPrintSchema {
-                                        pos: parser.position(),
+                                        pos: reader.position(),
                                         reason: "Property cannot be here".to_string(),
                                     }
                                 })?;
@@ -415,15 +431,19 @@ impl PrintSchemaDocument {
         }
 
         Err(ParsePrintSchemaError::InvalidPrintSchema {
-            pos: parser.position(),
+            pos: reader.position(),
             reason: "No valid root element found".to_string(),
         })
     }
+}
 
-    pub fn parse_as_capabilities(
-        xml: Vec<u8>,
-    ) -> Result<PrintCapabilitiesDocument, ParsePrintSchemaError> {
-        Self::parse(xml).and_then(|x| match x {
+impl ParsableXmlDocument for PrintCapabilitiesDocument {
+    type Error = ParsePrintSchemaError;
+    fn parse<R>(reader: &mut EventReader<R>) -> Result<Self, Self::Error>
+    where
+        R: std::io::Read,
+    {
+        PrintSchemaDocument::parse(reader).and_then(|x| match x {
             PrintSchemaDocument::PrintCapabilities(document) => Ok(document),
             PrintSchemaDocument::PrintTicket(_) => Err(ParsePrintSchemaError::WrongDocumentType {
                 expected: "PrintCapabilities",
@@ -431,9 +451,15 @@ impl PrintSchemaDocument {
             }),
         })
     }
+}
 
-    pub fn parse_as_ticket(xml: Vec<u8>) -> Result<PrintTicketDocument, ParsePrintSchemaError> {
-        Self::parse(xml).and_then(|x| match x {
+impl ParsableXmlDocument for PrintTicketDocument {
+    type Error = ParsePrintSchemaError;
+    fn parse<R>(reader: &mut EventReader<R>) -> Result<Self, Self::Error>
+    where
+        R: std::io::Read,
+    {
+        PrintSchemaDocument::parse(reader).and_then(|x| match x {
             PrintSchemaDocument::PrintTicket(document) => Ok(document),
             PrintSchemaDocument::PrintCapabilities(_) => {
                 Err(ParsePrintSchemaError::WrongDocumentType {
@@ -447,17 +473,21 @@ impl PrintSchemaDocument {
 
 #[cfg(test)]
 mod tests {
+    use crate::ticket::{
+        ParsableXmlDocument, PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument,
+    };
+
     #[test]
     fn wrong_type_should_return_error() {
         let xml = include_bytes!("../../test_data/print_ticket.xml");
-        let result = super::PrintSchemaDocument::parse_as_capabilities(xml.into());
+        let result = PrintCapabilitiesDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
             Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
         ));
 
         let xml = include_bytes!("../../test_data/print_capabilities.xml");
-        let result = super::PrintSchemaDocument::parse_as_ticket(xml.into());
+        let result = PrintTicketDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
             Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
@@ -497,7 +527,7 @@ mod tests {
         </psf:Property>
     </psf:ParameterDef>
 </psf:PrintTicket>"#;
-        let result = super::PrintSchemaDocument::parse(xml.into());
+        let result = PrintSchemaDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
             Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
@@ -515,7 +545,7 @@ mod tests {
         <psf:Value xsi:type="xsd:integer">2540</psf:Value>
     </psf:ParameterInit>
 </psf:PrintCapabilities>"#;
-        let result = super::PrintSchemaDocument::parse(xml.into());
+        let result = PrintSchemaDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
             Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
@@ -525,12 +555,12 @@ mod tests {
     #[test]
     fn parse_print_ticket() {
         let xml = include_bytes!("../../test_data/print_ticket.xml");
-        let _document = super::PrintSchemaDocument::parse_as_ticket(xml.to_vec()).unwrap();
+        let _document = PrintTicketDocument::parse_from_bytes(xml).unwrap();
     }
 
     #[test]
     fn parse_print_capabilities() {
         let xml = include_bytes!("../../test_data/print_capabilities.xml");
-        let _document = super::PrintSchemaDocument::parse_as_capabilities(xml.to_vec()).unwrap();
+        let _document = PrintCapabilitiesDocument::parse_from_bytes(xml).unwrap();
     }
 }

@@ -1,6 +1,6 @@
 use super::{
-    PageMediaSize, ParameterInit, ParsePrintSchemaError, PrintCapabilitiesDocument,
-    PrintFeatureOption, PrintSchemaDocument, NS_PSK,
+    PageMediaSize, ParameterInit, ParsableXmlDocument, ParsePrintSchemaError,
+    PrintCapabilitiesDocument, PrintFeatureOption, NS_PSK,
 };
 use crate::{
     printer::PrinterDevice,
@@ -70,7 +70,7 @@ impl PrintCapabilities {
 
     pub fn fetch(device: &PrinterDevice) -> Result<PrintCapabilities, FetchPrintCapabilitiesError> {
         let xml = Self::fetch_xml(device)?;
-        let document = PrintSchemaDocument::parse_as_capabilities(xml)
+        let document = PrintCapabilitiesDocument::parse_from_bytes(xml)
             .map_err(FetchPrintCapabilitiesError::ParseError)?;
         Ok(PrintCapabilities { document })
     }

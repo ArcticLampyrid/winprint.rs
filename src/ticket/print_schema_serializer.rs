@@ -309,14 +309,14 @@ fn start_element_with_optional_name<W: Write>(
 #[cfg(test)]
 mod tests {
     use super::XmlDocumentRoot;
-    use crate::ticket::PrintSchemaDocument;
+    use crate::ticket::{ParsableXmlDocument, PrintCapabilitiesDocument, PrintTicketDocument};
 
     #[test]
     fn serialize_for_print_ticket() {
         let origin = include_bytes!("../../test_data/print_ticket.xml");
-        let origin_document = PrintSchemaDocument::parse_as_ticket(origin.to_vec()).unwrap();
+        let origin_document = PrintTicketDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
-        let document = PrintSchemaDocument::parse_as_ticket(xml1.clone()).unwrap();
+        let document = PrintTicketDocument::parse_from_bytes(&xml1).unwrap();
         let xml2 = document.to_xml();
         assert_eq!(xml1, xml2);
     }
@@ -324,9 +324,9 @@ mod tests {
     #[test]
     fn serialize_print_capabilities() {
         let origin = include_bytes!("../../test_data/print_capabilities.xml");
-        let origin_document = PrintSchemaDocument::parse_as_capabilities(origin.to_vec()).unwrap();
+        let origin_document = PrintCapabilitiesDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
-        let document = PrintSchemaDocument::parse_as_capabilities(xml1.clone()).unwrap();
+        let document = PrintCapabilitiesDocument::parse_from_bytes(&xml1).unwrap();
         let xml2 = document.to_xml();
         assert_eq!(xml1, xml2);
     }
