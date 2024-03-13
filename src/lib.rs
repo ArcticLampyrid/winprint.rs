@@ -6,7 +6,7 @@ pub mod ticket;
 mod utils;
 #[cfg(test)]
 mod tests {
-    use crate::printer::PrinterInfo;
+    use crate::printer::PrinterDevice;
     use ctor::{ctor, dtor};
 
     const TEST_PRINTER_NAME: &str = "winprint-rs-null-printer";
@@ -63,9 +63,9 @@ mod tests {
             .unwrap();
     }
 
-    pub fn get_test_printer() -> PrinterInfo {
-        let printers = PrinterInfo::all().unwrap();
-        printers
+    pub fn get_test_device() -> PrinterDevice {
+        let devices = PrinterDevice::all().unwrap();
+        devices
             .into_iter()
             .find(|x| x.name() == TEST_PRINTER_NAME)
             .unwrap()

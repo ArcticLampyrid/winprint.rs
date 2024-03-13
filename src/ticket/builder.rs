@@ -1,6 +1,6 @@
 use super::{PrintTicket, DEFAULT_PRINT_TICKET_XML};
 use crate::{
-    printer::PrinterInfo,
+    printer::PrinterDevice,
     utils::{stream::copy_com_stream_to_vec, wchar},
 };
 use thiserror::Error;
@@ -33,9 +33,9 @@ pub enum PrintTicketBuilderError {
 }
 
 impl PrintTicketBuilder {
-    pub fn new(info: &PrinterInfo) -> Result<Self, PrintTicketBuilderError> {
+    pub fn new(device: &PrinterDevice) -> Result<Self, PrintTicketBuilderError> {
         let provider = unsafe {
-            PTOpenProvider(PCWSTR(wchar::to_wide_chars(info.os_name()).as_ptr()), 1)
+            PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
                 .map_err(PrintTicketBuilderError::OpenProviderFailed)?
         };
         Ok(Self {
@@ -91,14 +91,14 @@ impl Drop for PrintTicketBuilder {
 mod tests {
     use super::PrintTicketBuilder;
     use crate::{
-        tests::get_test_printer,
+        tests::get_test_device,
         ticket::{PrintTicket, PrintTicketBuilderError},
     };
 
     #[test]
     fn merge_simple_ticket() {
-        let test_printer = get_test_printer();
-        let mut builder = PrintTicketBuilder::new(&test_printer).unwrap();
+        let device = get_test_device();
+        let mut builder = PrintTicketBuilder::new(&device).unwrap();
         let delta = r#"<psf:PrintTicket xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1" xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
     <psf:Feature name="psk:PageMediaSize">
 		<psf:Option name="psk:NorthAmericaTabloid">
@@ -120,8 +120,8 @@ mod tests {
 
     #[test]
     fn merge_invalid_ticket() {
-        let test_printer = get_test_printer();
-        let mut builder = PrintTicketBuilder::new(&test_printer).unwrap();
+        let device = get_test_device();
+        let mut builder = PrintTicketBuilder::new(&device).unwrap();
         let delta = r#"This is not a valid print ticket"#;
         let result = builder.merge(PrintTicket::from_xml(delta));
         assert!(matches!(

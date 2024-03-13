@@ -1,5 +1,5 @@
-mod info;
-pub use info::PrinterInfo;
+mod device;
+pub use device::PrinterDevice;
 mod file;
 pub use file::FilePrinter;
 mod xps;

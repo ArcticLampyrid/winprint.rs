@@ -1,5 +1,5 @@
 use crate::printer::FilePrinter;
-use crate::printer::PrinterInfo;
+use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
 use scopeguard::defer;
@@ -33,11 +33,11 @@ pub enum XpsPrinterError {
 }
 
 pub struct XpsPrinter {
-    printer: PrinterInfo,
+    printer: PrinterDevice,
 }
 
 impl XpsPrinter {
-    pub fn new(printer: PrinterInfo) -> Self {
+    pub fn new(printer: PrinterDevice) -> Self {
         Self { printer }
     }
 }
@@ -107,13 +107,13 @@ impl FilePrinter for XpsPrinter {
 #[cfg(test)]
 mod tests {
     use super::XpsPrinter;
-    use crate::{printer::FilePrinter, tests::get_test_printer};
+    use crate::{printer::FilePrinter, tests::get_test_device};
     use std::path::Path;
 
     #[test]
     fn print_simple_xps_document() {
-        let test_printer = get_test_printer();
-        let xps = XpsPrinter::new(test_printer);
+        let device = get_test_device();
+        let xps = XpsPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
         xps.print(path.as_path(), Default::default()).unwrap();
     }

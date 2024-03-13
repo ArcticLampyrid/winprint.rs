@@ -58,24 +58,24 @@ impl From<PageMediaSize> for PrintTicket {
 #[cfg(test)]
 mod tests {
     use crate::{
-        tests::get_test_printer,
+        tests::get_test_device,
         ticket::{PredefinedMediaName, PrintCapabilities, PrintTicketBuilder},
     };
 
     #[test]
     fn use_page_media_size() {
-        let test_printer = get_test_printer();
-        let capabilities = PrintCapabilities::fetch(&test_printer).unwrap();
+        let device = get_test_device();
+        let capabilities = PrintCapabilities::fetch(&device).unwrap();
         for media in capabilities.page_media_size() {
-            let mut builder = PrintTicketBuilder::new(&test_printer).unwrap();
+            let mut builder = PrintTicketBuilder::new(&device).unwrap();
             builder.merge(media).unwrap();
         }
     }
 
     #[test]
     fn get_size() {
-        let test_printer = get_test_printer();
-        let capabilities = PrintCapabilities::fetch(&test_printer).unwrap();
+        let device = get_test_device();
+        let capabilities = PrintCapabilities::fetch(&device).unwrap();
         for media in capabilities.page_media_size() {
             let size = media.size();
             assert!(
@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn a4_should_be_found() {
-        let test_printer = get_test_printer();
-        let capabilities = PrintCapabilities::fetch(&test_printer).unwrap();
+        let device = get_test_device();
+        let capabilities = PrintCapabilities::fetch(&device).unwrap();
         capabilities
             .page_media_size()
             .find(|x| x.as_predefined_name() == Some(PredefinedMediaName::ISOA4))

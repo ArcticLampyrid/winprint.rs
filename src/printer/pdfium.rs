@@ -1,6 +1,6 @@
 use crate::bindings::pdfium::*;
 use crate::printer::FilePrinter;
-use crate::printer::PrinterInfo;
+use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
 use crate::utils::pdfium::PdfiumCustomDocument;
@@ -31,11 +31,11 @@ pub enum PdfiumPrinterError {
 }
 
 pub struct PdfiumPrinter {
-    printer: PrinterInfo,
+    printer: PrinterDevice,
 }
 
 impl PdfiumPrinter {
-    pub fn new(printer: PrinterInfo) -> Self {
+    pub fn new(printer: PrinterDevice) -> Self {
         Self { printer }
     }
 }
@@ -117,13 +117,13 @@ impl FilePrinter for PdfiumPrinter {
 #[cfg(test)]
 mod tests {
     use super::PdfiumPrinter;
-    use crate::{printer::FilePrinter, tests::get_test_printer};
+    use crate::{printer::FilePrinter, tests::get_test_device};
     use std::path::Path;
 
     #[test]
     fn print_simple_pdf_document() {
-        let test_printer = get_test_printer();
-        let pdf = PdfiumPrinter::new(test_printer);
+        let device = get_test_device();
+        let pdf = PdfiumPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
         pdf.print(path.as_path(), Default::default()).unwrap();
     }

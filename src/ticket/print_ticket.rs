@@ -1,5 +1,5 @@
 use super::{PrintTicketDocument, XmlDocumentRoot, DEFAULT_PRINT_TICKET_XML};
-use crate::{printer::PrinterInfo, utils::wchar};
+use crate::{printer::PrinterDevice, utils::wchar};
 use scopeguard::defer;
 use std::ptr;
 use thiserror::Error;
@@ -61,10 +61,11 @@ impl PrintTicket {
         &self.xml
     }
 
-    pub fn to_dev_mode(&self, info: &PrinterInfo) -> Result<Vec<u8>, ToDevModeError> {
+    pub fn to_dev_mode(&self, device: &PrinterDevice) -> Result<Vec<u8>, ToDevModeError> {
         unsafe {
-            let provider = PTOpenProvider(PCWSTR(wchar::to_wide_chars(info.os_name()).as_ptr()), 1)
-                .map_err(ToDevModeError::OpenProviderFailed)?;
+            let provider =
+                PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
+                    .map_err(ToDevModeError::OpenProviderFailed)?;
             defer! {
                 let _ = PTCloseProvider(provider);
             }
@@ -94,7 +95,7 @@ impl PrintTicket {
                 let _ = PTReleaseMemory(dev_mode_data as *mut _);
             }
 
-            let printer_name = wchar::to_wide_chars(info.os_name());
+            let printer_name = wchar::to_wide_chars(device.os_name());
             let printer_handle = {
                 let mut printer_handle = HANDLE::default();
                 OpenPrinterW(

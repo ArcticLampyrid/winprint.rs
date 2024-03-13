@@ -3,7 +3,7 @@ use super::{
     PrintFeatureOption, PrintSchemaDocument, NS_PSK,
 };
 use crate::{
-    printer::PrinterInfo,
+    printer::PrinterDevice,
     utils::{stream::read_com_stream, wchar},
 };
 use scopeguard::defer;
@@ -40,10 +40,11 @@ pub struct PrintCapabilities {
 }
 
 impl PrintCapabilities {
-    pub fn fetch_xml(info: &PrinterInfo) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
+    pub fn fetch_xml(device: &PrinterDevice) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
         unsafe {
-            let provider = PTOpenProvider(PCWSTR(wchar::to_wide_chars(info.os_name()).as_ptr()), 1)
-                .map_err(FetchPrintCapabilitiesError::OpenProviderFailed)?;
+            let provider =
+                PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
+                    .map_err(FetchPrintCapabilitiesError::OpenProviderFailed)?;
             defer! {
                 let _ = PTCloseProvider(provider);
             }
@@ -67,8 +68,8 @@ impl PrintCapabilities {
         }
     }
 
-    pub fn fetch(info: &PrinterInfo) -> Result<PrintCapabilities, FetchPrintCapabilitiesError> {
-        let xml = Self::fetch_xml(info)?;
+    pub fn fetch(device: &PrinterDevice) -> Result<PrintCapabilities, FetchPrintCapabilitiesError> {
+        let xml = Self::fetch_xml(device)?;
         let document = PrintSchemaDocument::parse_as_capabilities(xml)
             .map_err(FetchPrintCapabilitiesError::ParseError)?;
         Ok(PrintCapabilities { document })
@@ -148,16 +149,16 @@ impl PrintCapabilities {
 #[cfg(test)]
 mod tests {
     use super::PrintCapabilities;
-    use crate::tests::get_test_printer;
+    use crate::tests::get_test_device;
     #[test]
     fn test_fetch_xml() {
-        let test_printer = get_test_printer();
-        PrintCapabilities::fetch_xml(&test_printer).unwrap();
+        let device = get_test_device();
+        PrintCapabilities::fetch_xml(&device).unwrap();
     }
 
     #[test]
     fn test_fetch_xml_and_parse() {
-        let test_printer = get_test_printer();
-        PrintCapabilities::fetch(&test_printer).unwrap();
+        let device = get_test_device();
+        PrintCapabilities::fetch(&device).unwrap();
     }
 }
