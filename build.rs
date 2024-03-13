@@ -41,7 +41,14 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         #[cfg(all(windows, target_arch = "x86_64"))]
         let platform_name = "windows-x64";
         let binary_package_url = format!("https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F{}/pdfium-{}.tgz", build_id, platform_name);
-        let resp = reqwest::blocking::get(binary_package_url)?;
+        let resp = reqwest::blocking::get(binary_package_url.as_str())?;
+        if resp.status() != 200 {
+            return Err(format!(
+                "Failed to download pdfium binaries from {}",
+                binary_package_url
+            )
+            .into());
+        }
         let tar = GzDecoder::new(resp);
         let mut archive = Archive::new(tar);
         for entry in archive.entries()? {
