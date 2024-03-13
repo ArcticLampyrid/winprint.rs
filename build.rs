@@ -35,11 +35,13 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         })
     });
     if !has_bin {
-        let build_id = 4660;
+        let build_id = 6350;
         #[cfg(all(windows, target_arch = "x86"))]
-        let platform_name = "windows-x86";
+        let platform_name = "win-x86";
         #[cfg(all(windows, target_arch = "x86_64"))]
-        let platform_name = "windows-x64";
+        let platform_name = "win-x64";
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        let platform_name = "win-arm64";
         let binary_package_url = format!("https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F{}/pdfium-{}.tgz", build_id, platform_name);
         let resp = reqwest::blocking::get(binary_package_url.as_str())?;
         if resp.status() != 200 {
