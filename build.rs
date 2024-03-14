@@ -10,7 +10,7 @@ use std::{
 use flate2::read::GzDecoder;
 use tar::{Archive, EntryType};
 
-#[cfg(feature = "pdfium")]
+#[allow(dead_code)]
 fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
     let bin_ext = [
         OsStr::new("dll"),
