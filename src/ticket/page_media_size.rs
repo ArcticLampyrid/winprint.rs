@@ -1,6 +1,9 @@
 use super::{
-    MediaSizeTuple, ParameterInit, PredefinedMediaName, PrintFeature, PrintFeatureOption,
-    PrintTicket, PrintTicketDocument, WithScoredProperties, NS_PSK,
+    document::{
+        ParameterInit, PrintFeature, PrintFeatureOption, PrintTicketDocument, WithScoredProperties,
+        NS_PSK,
+    },
+    MediaSizeTuple, PredefinedMediaName, PrintTicket,
 };
 use xml::name::OwnedName;
 

@@ -1,4 +1,7 @@
-use super::{PrintTicketDocument, XmlDocumentRoot, DEFAULT_PRINT_TICKET_XML};
+use super::{
+    document::{writer::XmlDocumentRoot, PrintTicketDocument},
+    DEFAULT_PRINT_TICKET_XML,
+};
 use crate::{printer::PrinterDevice, utils::wchar};
 use scopeguard::defer;
 use std::ptr;

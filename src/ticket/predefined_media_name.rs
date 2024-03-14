@@ -1,4 +1,4 @@
-use super::NS_PSK;
+use super::document::NS_PSK;
 use std::str::FromStr;
 use strum::EnumString;
 use xml::name::OwnedName;

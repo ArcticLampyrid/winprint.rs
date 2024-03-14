@@ -309,11 +309,13 @@ fn start_element_with_optional_name<W: Write>(
 #[cfg(test)]
 mod tests {
     use super::XmlDocumentRoot;
-    use crate::ticket::{ParsableXmlDocument, PrintCapabilitiesDocument, PrintTicketDocument};
+    use crate::ticket::document::{
+        reader::ParsableXmlDocument, PrintCapabilitiesDocument, PrintTicketDocument,
+    };
 
     #[test]
     fn serialize_for_print_ticket() {
-        let origin = include_bytes!("../../test_data/print_ticket.xml");
+        let origin = include_bytes!("../../../test_data/print_ticket.xml");
         let origin_document = PrintTicketDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
         let document = PrintTicketDocument::parse_from_bytes(&xml1).unwrap();
@@ -323,7 +325,7 @@ mod tests {
 
     #[test]
     fn serialize_print_capabilities() {
-        let origin = include_bytes!("../../test_data/print_capabilities.xml");
+        let origin = include_bytes!("../../../test_data/print_capabilities.xml");
         let origin_document = PrintCapabilitiesDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
         let document = PrintCapabilitiesDocument::parse_from_bytes(&xml1).unwrap();

@@ -1,8 +1,8 @@
 use super::{
-    ParameterInit, PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument,
-    PropertyValue, NS_PSF, NS_XSD, NS_XSI,
+    ParameterDef, ParameterInit, PrintCapabilitiesDocument, PrintFeature, PrintFeatureOption,
+    PrintSchemaDocument, PrintTicketDocument, Property, PropertyValue, ScoredProperty, NS_PSF,
+    NS_XSD, NS_XSI,
 };
-use crate::ticket::{ParameterDef, PrintFeature, PrintFeatureOption, Property, ScoredProperty};
 use std::{fmt::Debug, io::Cursor};
 use thiserror::Error;
 use xml::{
@@ -473,24 +473,25 @@ impl ParsableXmlDocument for PrintTicketDocument {
 
 #[cfg(test)]
 mod tests {
-    use crate::ticket::{
-        ParsableXmlDocument, PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument,
+    use super::{ParsableXmlDocument, ParsePrintSchemaError};
+    use crate::ticket::document::{
+        PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument,
     };
 
     #[test]
     fn wrong_type_should_return_error() {
-        let xml = include_bytes!("../../test_data/print_ticket.xml");
+        let xml = include_bytes!("../../../test_data/print_ticket.xml");
         let result = PrintCapabilitiesDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
-            Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
+            Err(ParsePrintSchemaError::WrongDocumentType { .. })
         ));
 
-        let xml = include_bytes!("../../test_data/print_capabilities.xml");
+        let xml = include_bytes!("../../../test_data/print_capabilities.xml");
         let result = PrintTicketDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
-            Err(super::ParsePrintSchemaError::WrongDocumentType { .. })
+            Err(ParsePrintSchemaError::WrongDocumentType { .. })
         ));
     }
 
@@ -530,7 +531,7 @@ mod tests {
         let result = PrintSchemaDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
-            Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
+            Err(ParsePrintSchemaError::InvalidPrintSchema { .. })
         ));
     }
 
@@ -548,19 +549,19 @@ mod tests {
         let result = PrintSchemaDocument::parse_from_bytes(xml);
         assert!(matches!(
             result,
-            Err(super::ParsePrintSchemaError::InvalidPrintSchema { .. })
+            Err(ParsePrintSchemaError::InvalidPrintSchema { .. })
         ));
     }
 
     #[test]
     fn parse_print_ticket() {
-        let xml = include_bytes!("../../test_data/print_ticket.xml");
+        let xml = include_bytes!("../../../test_data/print_ticket.xml");
         let _document = PrintTicketDocument::parse_from_bytes(xml).unwrap();
     }
 
     #[test]
     fn parse_print_capabilities() {
-        let xml = include_bytes!("../../test_data/print_capabilities.xml");
+        let xml = include_bytes!("../../../test_data/print_capabilities.xml");
         let _document = PrintCapabilitiesDocument::parse_from_bytes(xml).unwrap();
     }
 }

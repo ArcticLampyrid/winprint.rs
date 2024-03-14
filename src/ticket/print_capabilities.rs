@@ -1,6 +1,9 @@
 use super::{
-    PageMediaSize, ParameterInit, ParsableXmlDocument, ParsePrintSchemaError,
-    PrintCapabilitiesDocument, PrintFeatureOption, NS_PSK,
+    document::{
+        reader::{ParsableXmlDocument, ParsePrintSchemaError},
+        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption, NS_PSK,
+    },
+    PageMediaSize,
 };
 use crate::{
     printer::PrinterDevice,

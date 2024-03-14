@@ -267,9 +267,8 @@ impl WithProperties for Property {
 mod tests {
     use super::{
         PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument, Property,
-        PropertyValue,
+        PropertyValue, WithProperties,
     };
-    use crate::ticket::WithProperties;
     use xml::name::OwnedName;
 
     fn new_test_properties() -> Vec<Property> {
