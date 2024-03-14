@@ -25,6 +25,7 @@ use windows::{
 };
 
 #[derive(Clone, Debug)]
+/// Represents a print ticket.
 pub struct PrintTicket {
     pub(crate) xml: Vec<u8>,
 }
@@ -38,32 +39,46 @@ impl Default for PrintTicket {
 }
 
 #[derive(Error, Debug)]
+/// Represents an error occurred while converting print ticket to dev mode.
 pub enum ToDevModeError {
+    /// Failed to open print ticket provider.
     #[error("Failed to open print ticket provider: {0}")]
     OpenProviderFailed(windows::core::Error),
+    /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
+    /// Failed to convert print ticket to dev mode.
     #[error("Failed to convert print ticket to dev mode: {0}")]
     ConvertPrintTicketToDevModeFailed(String, windows::core::Error),
+    /// Failed to open printer.
     #[error("Failed to open printer: {0}")]
     FailedToOpenPrinter(windows::core::Error),
+    /// Failed to correct dev mode via [`DocumentProperties`].
+    ///
+    /// [`DocumentProperties`]: https://learn.microsoft.com/en-us/windows/win32/printdocs/documentproperties
     #[error("Failed to correct dev mode via DocumentProperties")]
     FailedToCorrectDevMode,
 }
 
 impl PrintTicket {
+    /// Create a new print ticket from the given XML.
     pub fn from_xml(xml: impl Into<Vec<u8>>) -> Self {
         Self { xml: xml.into() }
     }
 
+    /// Into the XML of the print ticket.
     pub fn into_xml(self) -> Vec<u8> {
         self.xml
     }
 
+    /// Get the XML of the print ticket.
     pub fn get_xml(&self) -> &[u8] {
         &self.xml
     }
 
+    /// Convert the print ticket to [`DEVMODE`] data.
+    ///
+    /// [`DEVMODE`]: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-devmodew
     pub fn to_dev_mode(&self, device: &PrinterDevice) -> Result<Vec<u8>, ToDevModeError> {
         unsafe {
             let provider =

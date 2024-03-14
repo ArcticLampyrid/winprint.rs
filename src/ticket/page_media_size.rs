@@ -8,16 +8,21 @@ use super::{
 use xml::name::OwnedName;
 
 #[derive(Clone, Debug)]
+/// Represents a page media size.
 pub struct PageMediaSize {
+    /// The DOM of the option for media size.
     pub option: PrintFeatureOption,
+    /// The parameters that is referenced by the option.
     pub parameters: Vec<ParameterInit>,
 }
 
 impl PageMediaSize {
+    /// Create a new [`PageMediaSize`] from the given DOM.
     pub fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self {
         Self { option, parameters }
     }
 
+    /// Get the size of the media.
     pub fn size(&self) -> MediaSizeTuple {
         let width = self
             .option
@@ -34,6 +39,8 @@ impl PageMediaSize {
         MediaSizeTuple::micron(width as u32, height as u32)
     }
 
+    /// Get the predefined name of the media.
+    /// If the media is not predefined, `None` is returned.
     pub fn as_predefined_name(&self) -> Option<PredefinedMediaName> {
         self.option
             .name

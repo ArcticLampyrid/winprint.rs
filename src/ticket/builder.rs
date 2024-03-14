@@ -15,24 +15,31 @@ use windows::{
     },
 };
 
+/// Represents a print ticket builder, which can be used to build a print ticket.
 pub struct PrintTicketBuilder {
     xml: Vec<u8>,
     provider: HPTPROVIDER,
 }
 
 #[derive(Error, Debug)]
+/// Represents an error occurred while building a print ticket.
 pub enum PrintTicketBuilderError {
+    /// Failed to open print ticket provider.
     #[error("Failed to open print ticket provider: {0}")]
     OpenProviderFailed(windows::core::Error),
+    /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
+    /// Failed to merge print tickets.
     #[error("Failed to merge print tickets: {0}")]
     MergePrintTicketsFailed(String, windows::core::Error),
+    /// Failed to decode print ticket.
     #[error("Failed to decode print ticket: {0}")]
     DecodePrintTicketFailed(windows::core::Error),
 }
 
 impl PrintTicketBuilder {
+    /// Create a new print ticket builder for the given printer device.
     pub fn new(device: &PrinterDevice) -> Result<Self, PrintTicketBuilderError> {
         let provider = unsafe {
             PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
@@ -44,6 +51,7 @@ impl PrintTicketBuilder {
         })
     }
 
+    /// Merge the given print ticket into the current print ticket.
     pub fn merge(&mut self, delta: impl Into<PrintTicket>) -> Result<(), PrintTicketBuilderError> {
         unsafe {
             let base = SHCreateMemStream(Some(self.xml.as_ref()))
@@ -73,6 +81,7 @@ impl PrintTicketBuilder {
         Ok(())
     }
 
+    /// Build the print ticket.
     pub fn build(mut self) -> Result<PrintTicket, PrintTicketBuilderError> {
         let xml = std::mem::take(&mut self.xml);
         Ok(PrintTicket { xml })

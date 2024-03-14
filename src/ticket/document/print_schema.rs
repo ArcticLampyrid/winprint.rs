@@ -2,83 +2,126 @@ use std::fmt;
 use xml::name::OwnedName;
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a Print Schema document.
 pub enum PrintSchemaDocument {
+    /// Documents that typed as [`PrintCapabilitiesDocument`].
     PrintCapabilities(PrintCapabilitiesDocument),
+    /// Documents that typed as [`PrintTicketDocument`].
     PrintTicket(PrintTicketDocument),
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a PrintCapabilities document.
 pub struct PrintCapabilitiesDocument {
+    /// Properties of the document
     pub properties: Vec<Property>,
+    /// Parameter definitions
     pub parameter_defs: Vec<ParameterDef>,
+    /// Features
     pub features: Vec<PrintFeature>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a PrintTicket document.
 pub struct PrintTicketDocument {
+    /// Properties of the document
     pub properties: Vec<Property>,
+    /// Parameter initializations
     pub parameter_inits: Vec<ParameterInit>,
+    /// Features
     pub features: Vec<PrintFeature>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a Print Feature.
 pub struct PrintFeature {
+    /// The name of the feature.
     #[fmt("{}", self.name)]
     pub name: OwnedName,
+    /// Properties of the feature
     pub properties: Vec<Property>,
+    /// Available options
     pub options: Vec<PrintFeatureOption>,
+    /// Sub-features of the feature
     pub features: Vec<PrintFeature>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a parameter initialization used in a [`PrintTicketDocument`].
 pub struct ParameterInit {
+    /// The name of the parameter.
     #[fmt("{}", self.name)]
     pub name: OwnedName,
+    /// The value of the parameter.
     #[fmt("{:?}", self.value)]
     pub value: PropertyValue,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a parameter definition used in a [`PrintCapabilitiesDocument`].
 pub struct ParameterDef {
+    /// The name of the parameter.
     #[fmt("{}", self.name)]
     pub name: OwnedName,
+    /// Properties of the parameter
     pub properties: Vec<Property>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a possible option for a [`PrintFeature`].
 pub struct PrintFeatureOption {
+    /// The name of the option.
     #[fmt("{}", self.name.as_ref().map(|x| x.to_string()).unwrap_or("<unnamed>".to_string()))]
     pub name: Option<OwnedName>,
+    /// Scored-properties of the option
     pub scored_properties: Vec<ScoredProperty>,
+    /// Properties of the option
     pub properties: Vec<Property>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a scored-property.
+/// A [`ScoredProperty`] declares a property that is intrinsic to an [Option](PrintFeatureOption).
+/// Such properties should be compared when evaluating how closely a requested Option matches a device-supported Option.
 pub struct ScoredProperty {
+    /// The name of the scored-property.
     #[fmt("{}", self.name.as_ref().map(|x| x.to_string()).unwrap_or("<unnamed>".to_string()))]
     pub name: Option<OwnedName>,
+    /// The parameter that this scored-property depends on.
     #[fmt("{}", self.parameter_ref.as_ref().map(|x| x.to_string()).unwrap_or("<unnamed>".to_string()))]
     pub parameter_ref: Option<OwnedName>,
+    /// The value of the scored-property.
     #[fmt("{}", self.value.as_ref().map(|x| format!("{:?}", x)).unwrap_or("<none>".to_string()))]
     pub value: Option<PropertyValue>,
+    /// Sub-scored-properties of the scored-property
     pub scored_properties: Vec<ScoredProperty>,
+    /// Properties of the scored-property
     pub properties: Vec<Property>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, fmt_derive::Debug)]
+/// Represents a property.
 pub struct Property {
+    /// The name of the property.
     #[fmt("{}", self.name)]
     pub name: OwnedName,
+    /// The value of the property.
     #[fmt("{}", self.value.as_ref().map(|x| format!("{:?}", x)).unwrap_or("<none>".to_string()))]
     pub value: Option<PropertyValue>,
+    /// Sub-properties of the property
     pub properties: Vec<Property>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
+/// Represents a property value or a scored-property value.
 pub enum PropertyValue {
+    /// A string value.
     String(String),
+    /// An integer value.
     Integer(i32),
+    /// A qualified name value.
     QName(OwnedName),
+    /// An unknown-typed value.
     Unknown(OwnedName, String),
 }
 
@@ -94,6 +137,7 @@ impl fmt::Debug for PropertyValue {
 }
 
 impl ParameterDef {
+    /// Get the default value of this parameter.
     pub fn default_value(&self) -> Option<&PropertyValue> {
         self.properties
             .iter()
@@ -105,6 +149,7 @@ impl ParameterDef {
 }
 
 impl PropertyValue {
+    /// Get the `xsi:type` of this value.
     pub fn xsi_type(&self) -> OwnedName {
         match self {
             PropertyValue::String(_) => OwnedName::qualified("string", super::NS_XSD, Some("xsd")),
@@ -115,18 +160,21 @@ impl PropertyValue {
             PropertyValue::Unknown(n, _) => n.clone(),
         }
     }
+    /// Try as [`PropertyValue::String`] value.
     pub fn string(&self) -> Option<&str> {
         match self {
             PropertyValue::String(s) => Some(s),
             _ => None,
         }
     }
+    /// Try as [`PropertyValue::Integer`] value.
     pub fn integer(&self) -> Option<i32> {
         match self {
             PropertyValue::Integer(i) => Some(*i),
             _ => None,
         }
     }
+    /// Try as [`PropertyValue::QName`] value.
     pub fn qualified_name(&self) -> Option<&OwnedName> {
         match self {
             PropertyValue::QName(q) => Some(q),
@@ -136,6 +184,7 @@ impl PropertyValue {
 }
 
 impl PrintFeatureOption {
+    /// Collect all parameters that this option depends on.
     pub fn parameters_dependent(&self) -> Vec<OwnedName> {
         let mut result = vec![];
         for scored_property in &self.scored_properties {
@@ -146,6 +195,7 @@ impl PrintFeatureOption {
 }
 
 impl ScoredProperty {
+    /// Collect all parameters that this scored-property depends on.
     pub fn parameters_dependent(&self) -> Vec<OwnedName> {
         let mut result = vec![];
         if let Some(ref parameter_ref) = self.parameter_ref {
@@ -156,6 +206,8 @@ impl ScoredProperty {
         }
         result
     }
+
+    /// Get the value of this scored-property, or the value of the parameter it references.
     pub fn value_with<'a>(&'a self, parameters: &'a [ParameterInit]) -> Option<&'a PropertyValue> {
         if let Some(ref parameter_ref) = self.parameter_ref {
             parameters
@@ -180,8 +232,12 @@ impl From<PrintCapabilitiesDocument> for PrintSchemaDocument {
     }
 }
 
+/// A trait for types that have scored-properties.
 pub trait WithScoredProperties {
+    /// Get the scored properties.
     fn scored_properties(&self) -> &[ScoredProperty];
+
+    /// Get the scored-property with the given name and namespace.
     fn get_scored_property(&self, name: &str, namespace: Option<&str>) -> Option<&ScoredProperty> {
         self.scored_properties().iter().find(|x| {
             x.name.as_ref().map_or(false, |x| {
@@ -203,8 +259,12 @@ impl WithScoredProperties for ScoredProperty {
     }
 }
 
+/// A trait for types that have properties.
 pub trait WithProperties {
+    /// Get the properties.
     fn properties(&self) -> &[Property];
+
+    /// Get the property with the given name and namespace.
     fn get_property(&self, name: &str, namespace: Option<&str>) -> Option<&Property> {
         self.properties()
             .iter()

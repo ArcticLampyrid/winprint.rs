@@ -1,26 +1,34 @@
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// Represents a media size tuple.
 pub struct MediaSizeTuple(u32, u32);
 impl MediaSizeTuple {
+    /// Create a new media size tuple using width and height in micron.
     pub const fn micron(width: u32, height: u32) -> Self {
         MediaSizeTuple(width, height)
     }
+    /// Create a new media size tuple using width and height in millimeter.
     pub const fn mm(width: u32, height: u32) -> Self {
         MediaSizeTuple(width * 1000, height * 1000)
     }
+    /// Get the width in micron.
     pub const fn width_in_micron(&self) -> u32 {
         self.0
     }
+    /// Get the height in micron.
     pub const fn height_in_micron(&self) -> u32 {
         self.1
     }
+    /// Set the width in micron.
     pub fn set_width_in_micron(&mut self, width: u32) {
         self.0 = width;
     }
+    /// Set the height in micron.
     pub fn set_height_in_micron(&mut self, height: u32) {
         self.1 = height;
     }
+    /// Determine if the media is a roll media.
     pub fn is_roll(&self) -> bool {
         // for roll media, either width or height is 0
         self.0 == 0 || self.1 == 0

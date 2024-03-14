@@ -21,20 +21,26 @@ use windows::{
 };
 
 #[derive(Error, Debug)]
+/// Represents an error from [`PdfiumPrinter`].
 pub enum PdfiumPrinterError {
+    /// Failed to open printer.
     #[error("Failed to open printer")]
     FailedToOpenPrinter,
+    /// File I/O error.
     #[error("File I/O error: {0}")]
     FileIOError(std::io::Error),
+    /// Print ticket error.
     #[error("Print Ticker Error: {0}")]
     PrintTicketError(ToDevModeError),
 }
 
+/// A printer that uses Pdfium to print PDF documents.
 pub struct PdfiumPrinter {
     printer: PrinterDevice,
 }
 
 impl PdfiumPrinter {
+    /// Create a new [`PdfiumPrinter`] for the given printer device.
     pub fn new(printer: PrinterDevice) -> Self {
         Self { printer }
     }

@@ -9,12 +9,17 @@ use xml::{
 impl XmlDocumentRoot for super::PrintCapabilitiesDocument {}
 impl XmlDocumentRoot for super::PrintTicketDocument {}
 
+/// A trait for serializing as XML element.
 pub trait XmlSerializer {
+    /// Collect the namespace URIs and prefixes used in the XML element.
     fn collect_namespace(&self, ns: &mut Namespace);
+    /// Write the XML element to the writer.
     fn write_to<W: Write>(&self, writer: &mut EventWriter<W>) -> Result<(), xml::writer::Error>;
 }
 
+/// A trait for serializing as XML document.
 pub trait XmlDocumentRoot: XmlSerializer {
+    /// Convert the struct to XML.
     fn to_xml(&self) -> Vec<u8> {
         let mut writer = EmitterConfig::new()
             .perform_indent(false)

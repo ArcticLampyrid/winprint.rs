@@ -17,26 +17,35 @@ use windows::{
 };
 
 #[derive(Error, Debug)]
+/// Represents an error from [`XpsPrinter`].
 pub enum XpsPrinterError {
+    /// Failed to create event.
     #[error("Failed to create event: {0}")]
     FailedToCreateEvent(windows::core::Error),
+    /// Failed to create object factory.
     #[error("Failed to create object factory: {0}")]
     FailedToCreateObjectFactory(windows::core::Error),
+    /// Failed to start job.
     #[error("Failed to start job: {0}")]
     FailedToStartJob(windows::core::Error),
+    /// Failed to apply print ticket.
     #[error("Failed to apply print ticket: {0}")]
     FailedToApplyPrintTicket(windows::core::Error),
+    /// Failed to write document.
     #[error("Failed to write document: {0}")]
     FailedToWriteDocument(windows::core::Error),
+    /// Stream is not available.
     #[error("Stream is not available")]
     StreamNotAvailable,
 }
 
+/// A printer to print XPS documents.
 pub struct XpsPrinter {
     printer: PrinterDevice,
 }
 
 impl XpsPrinter {
+    /// Create a new [`XpsPrinter`] for the given printer device.
     pub fn new(printer: PrinterDevice) -> Self {
         Self { printer }
     }

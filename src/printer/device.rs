@@ -7,6 +7,7 @@ use thiserror::Error;
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Printing::*;
 #[derive(Clone, Debug)]
+/// Represents a printer device.
 pub struct PrinterDevice {
     name: String,
     os_server: OsString,
@@ -15,12 +16,15 @@ pub struct PrinterDevice {
 }
 
 #[derive(Error, Debug)]
+/// Represents an error occurred while enumerating printer devices.
 pub enum EnumDeviceError {
+    /// Failed to enum printer device.
     #[error("Failed to enum printer device: {0}")]
     FailedToEnumPrinterDevice(windows::core::Error),
 }
 
 impl PrinterDevice {
+    /// Fetch all printer devices.
     pub fn all() -> Result<Vec<Self>, EnumDeviceError> {
         let mut bytes_needed = 0;
         let mut count_returned = 0;
@@ -91,10 +95,12 @@ impl PrinterDevice {
         self.os_name.as_ref()
     }
 
+    /// Check if the printer device is local.
     pub fn is_local(&self) -> bool {
         self.os_attributes & PRINTER_ATTRIBUTE_LOCAL != 0
     }
 
+    /// Check if the printer device is remote.
     pub fn is_remote(&self) -> bool {
         self.os_attributes & PRINTER_ATTRIBUTE_NETWORK != 0
     }

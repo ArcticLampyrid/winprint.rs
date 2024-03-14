@@ -74,6 +74,8 @@ impl Drop for NullPrinterDevice {
     }
 }
 
+/// Get a thread-local null printer device.
+/// This device is automatically managed and to be deleted when the thread ends.
 pub fn thread_local() -> PrinterDevice {
     NULL_DEVICE.with(|f| f.get_or_init(NullPrinterDevice::new).printer.clone())
 }

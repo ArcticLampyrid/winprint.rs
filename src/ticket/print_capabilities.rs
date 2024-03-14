@@ -24,25 +24,34 @@ use windows::{
 use xml::name::OwnedName;
 
 #[derive(Error, Debug)]
+/// Represents an error occurred while fetching print capabilities.
 pub enum FetchPrintCapabilitiesError {
+    /// Failed to open print ticket provider.
     #[error("Failed to open print ticket provider: {0}")]
     OpenProviderFailed(windows::core::Error),
+    /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
+    /// Cannot get print capabilities.
     #[error("Cannot get print capabilities: {0}")]
     CannotGetPrintCapabilities(String, windows::core::Error),
+    /// Failed to read stream.
     #[error("Failed to read stream: {0}")]
     ReadStreamFailed(windows::core::Error),
+    /// Failed to parse print capabilities.
     #[error("Failed to parse print capabilities: {0}")]
     ParseError(ParsePrintSchemaError),
 }
 
 #[derive(Clone, Debug)]
+/// Represents print capabilities.
 pub struct PrintCapabilities {
+    /// DOM of print capabilities document.
     pub document: PrintCapabilitiesDocument,
 }
 
 impl PrintCapabilities {
+    /// Fetch print capabilities XML (without parsing it) for the given printer device.
     pub fn fetch_xml(device: &PrinterDevice) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
         unsafe {
             let provider =
@@ -71,6 +80,7 @@ impl PrintCapabilities {
         }
     }
 
+    /// Fetch and parse print capabilities for the given printer device.
     pub fn fetch(device: &PrinterDevice) -> Result<PrintCapabilities, FetchPrintCapabilitiesError> {
         let xml = Self::fetch_xml(device)?;
         let document = PrintCapabilitiesDocument::parse_from_bytes(xml)
@@ -78,6 +88,7 @@ impl PrintCapabilities {
         Ok(PrintCapabilities { document })
     }
 
+    /// Defines all parameters with default values.
     pub fn default_parameters(&self) -> impl Iterator<Item = ParameterInit> + '_ {
         self.document.parameter_defs.iter().filter_map(|param_def| {
             param_def
@@ -89,6 +100,7 @@ impl PrintCapabilities {
         })
     }
 
+    /// Defines the given parameters with default values.
     pub fn default_parameters_for<'a>(
         &'a self,
         filters: &'a [OwnedName],
@@ -116,6 +128,7 @@ impl PrintCapabilities {
             })
     }
 
+    /// Get all options for the given feature.
     pub fn options_for_feature<'a>(
         &'a self,
         feature_name: &'a str,
@@ -138,6 +151,7 @@ impl PrintCapabilities {
             .collect()
     }
 
+    /// Get all page media sizes.
     pub fn page_media_size(&self) -> impl Iterator<Item = PageMediaSize> + '_ {
         self.options_for_feature("PageMediaSize", Some(NS_PSK))
             .map(|option| {

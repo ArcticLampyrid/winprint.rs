@@ -14,25 +14,40 @@ use xml::{
 };
 
 #[derive(Error, Debug)]
+/// Represents an error occurred while parsing print schema.
 pub enum ParsePrintSchemaError {
+    /// Invalid XML.
     #[error("Invalid xml: {0}")]
     InvalidXml(xml::reader::Error),
+    /// Invalid print schema.
     #[error("Invalid print schema: (at {pos}) {reason}")]
-    InvalidPrintSchema { pos: TextPosition, reason: String },
+    InvalidPrintSchema {
+        /// Position in the document.
+        pos: TextPosition,
+        /// Reason of the error.
+        reason: String,
+    },
+    /// Wrong document type.
     #[error("Wrong document type: expected {expected} but found {found}")]
     WrongDocumentType {
+        /// Expected document type.
         expected: &'static str,
+        /// Found document type.
         found: &'static str,
     },
 }
 
+/// Represents a root element which can be parsed from XML.
 pub trait ParsableXmlDocument: Sized {
+    /// The error type that can be returned when parsing fails.
     type Error;
 
+    /// Parse the XML document from the given XML reader.
     fn parse<R>(reader: &mut EventReader<R>) -> Result<Self, Self::Error>
     where
         R: std::io::Read;
 
+    /// Parse the XML document from the given bytes.
     fn parse_from_bytes(xml: impl AsRef<[u8]>) -> Result<Self, Self::Error> {
         let mut reader = EventReader::new(Cursor::new(xml));
         Self::parse(&mut reader)
