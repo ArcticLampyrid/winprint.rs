@@ -16,3 +16,6 @@ pub const NS_PSK: &str =
 pub const NS_XSD: &str = "http://www.w3.org/2001/XMLSchema";
 /// The namespace URI for the XML Schema Instance.
 pub const NS_XSI: &str = "http://www.w3.org/2001/XMLSchema-instance";
+
+/// (Re-)export the `OwnedName` type from the `xml` crate.
+pub use xml::name::OwnedName;
