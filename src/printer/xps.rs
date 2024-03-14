@@ -21,19 +21,19 @@ use windows::{
 pub enum XpsPrinterError {
     /// Failed to create event.
     #[error("Failed to create event: {0}")]
-    FailedToCreateEvent(windows::core::Error),
+    FailedToCreateEvent(#[source] windows::core::Error),
     /// Failed to create object factory.
     #[error("Failed to create object factory: {0}")]
-    FailedToCreateObjectFactory(windows::core::Error),
+    FailedToCreateObjectFactory(#[source] windows::core::Error),
     /// Failed to start job.
     #[error("Failed to start job: {0}")]
-    FailedToStartJob(windows::core::Error),
+    FailedToStartJob(#[source] windows::core::Error),
     /// Failed to apply print ticket.
     #[error("Failed to apply print ticket: {0}")]
-    FailedToApplyPrintTicket(windows::core::Error),
+    FailedToApplyPrintTicket(#[source] windows::core::Error),
     /// Failed to write document.
     #[error("Failed to write document: {0}")]
-    FailedToWriteDocument(windows::core::Error),
+    FailedToWriteDocument(#[source] windows::core::Error),
     /// Stream is not available.
     #[error("Stream is not available")]
     StreamNotAvailable,

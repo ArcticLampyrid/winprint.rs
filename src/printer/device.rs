@@ -20,7 +20,7 @@ pub struct PrinterDevice {
 pub enum EnumDeviceError {
     /// Failed to enum printer device.
     #[error("Failed to enum printer device: {0}")]
-    FailedToEnumPrinterDevice(windows::core::Error),
+    FailedToEnumPrinterDevice(#[source] windows::core::Error),
 }
 
 impl PrinterDevice {
