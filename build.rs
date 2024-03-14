@@ -89,6 +89,10 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
+    // Skip downloading native libraries on docs.rs
+    if std::env::var("DOCS_RS").is_ok() {
+        return;
+    }
     let target_windows = env::var("CARGO_CFG_TARGET_OS").unwrap();
     if target_windows == "windows" {
         #[cfg(feature = "pdfium")]
