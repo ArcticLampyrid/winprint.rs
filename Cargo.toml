@@ -2,6 +2,14 @@
 edition = "2021"
 name = "winprint"
 version = "0.1.0"
+authors = ["ArcticLampyrid <ArcticLampyrid@outlook.com>"]
+keywords = ["printer", "printing", "xps", "pdf"]
+categories = ["api-bindings", "os::windows-apis"]
+description = "A crate for printing to a Windows printer device using Windows API"
+license = "BSD-3-Clause"
+readme = "README.md"
+documentation = "https://docs.rs/winprint"
+repository = "https://github.com/ArcticLampyrid/winprint.rs/"
 
 [dependencies]
 lazy_static = "1.4"
