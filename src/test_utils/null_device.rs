@@ -1,11 +1,12 @@
 use crate::printer::PrinterDevice;
 use sha2::{Digest, Sha256};
-use std::cell::OnceCell;
+use std::{cell::OnceCell, process::Stdio, sync::OnceLock};
 
 thread_local! {
     static NULL_DEVICE: OnceCell<NullPrinterDevice> = OnceCell::new();
 }
 static DEVICE_ID_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static PORT_AND_DRIVER_INSTALLER: OnceLock<()> = OnceLock::new();
 
 struct NullPrinterDevice {
     printer: PrinterDevice,
@@ -13,6 +14,21 @@ struct NullPrinterDevice {
 
 impl NullPrinterDevice {
     fn new() -> Self {
+        PORT_AND_DRIVER_INSTALLER.get_or_init(|| {
+            std::process::Command::new("powershell")
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .args([
+                    "-Command",
+                    "if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) {Add-PrinterDriver 'Generic / Text Only' -ErrorAction Continue} if (-not (Get-PrinterPort -Name 'nul:' -ErrorAction SilentlyContinue)) {Add-PrinterPort -Name 'nul:' -ErrorAction Continue}",
+                ])
+                .spawn()
+                .unwrap()
+                .wait()
+                .unwrap();
+        });
+
         let id = DEVICE_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let exe_path = std::env::current_exe().unwrap().canonicalize().unwrap();
@@ -29,19 +45,16 @@ impl NullPrinterDevice {
             return NullPrinterDevice { printer };
         }
 
-        std::process::Command::new("rundll32")
+        std::process::Command::new("powershell")
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .args([
-                "printui.dll,PrintUIEntry",
-                "/if",
-                "/b",
-                printer_name.as_ref(),
-                "/f",
-                &format!("{}\\inf\\ntprint.inf", std::env::var("SystemRoot").unwrap()),
-                "/r",
-                "nul:",
-                "/m",
-                "Generic / Text Only",
-                "/z",
+                "-Command",
+                &format!(
+                    "Add-Printer -Name '{}' -PortName 'nul:' -DriverName 'Generic / Text Only'",
+                    printer_name
+                ),
             ])
             .spawn()
             .unwrap()
@@ -59,13 +72,13 @@ impl NullPrinterDevice {
 
 impl Drop for NullPrinterDevice {
     fn drop(&mut self) {
-        std::process::Command::new("rundll32")
+        std::process::Command::new("powershell")
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .args([
-                "printui.dll,PrintUIEntry",
-                "/dl",
-                "/n",
-                self.printer.name(),
-                "/q",
+                "-Command",
+                &format!("Remove-Printer -Name '{}'", self.printer.name()),
             ])
             .spawn()
             .unwrap()
