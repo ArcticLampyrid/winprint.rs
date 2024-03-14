@@ -10,6 +10,7 @@ use std::{
 use flate2::read::GzDecoder;
 use tar::{Archive, EntryType};
 
+#[cfg(feature = "pdfium")]
 fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
     let bin_ext = [
         OsStr::new("dll"),
@@ -36,12 +37,17 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
     });
     if !has_bin {
         let build_id = 6350;
-        #[cfg(all(windows, target_arch = "x86"))]
-        let platform_name = "win-x86";
-        #[cfg(all(windows, target_arch = "x86_64"))]
-        let platform_name = "win-x64";
-        #[cfg(all(windows, target_arch = "aarch64"))]
-        let platform_name = "win-arm64";
+
+        let platform_name = match (
+            env::var("CARGO_CFG_TARGET_OS")?.as_str(),
+            env::var("CARGO_CFG_TARGET_ARCH")?.as_str(),
+        ) {
+            ("windows", "x86") => "win-x86",
+            ("windows", "x86_64") => "win-x64",
+            ("windows", "aarch64") => "win-arm64",
+            _ => return Err("Unsupported target arch".into()),
+        };
+
         let binary_package_url = format!("https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F{}/pdfium-{}.tgz", build_id, platform_name);
         let resp = reqwest::blocking::get(binary_package_url.as_str())?;
         if resp.status() != 200 {
@@ -83,8 +89,8 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
-    #[cfg(windows)]
-    {
+    let target_windows = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    if target_windows == "windows" {
         #[cfg(feature = "pdfium")]
         try_link_pdfium().unwrap();
     }
