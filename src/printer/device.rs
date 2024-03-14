@@ -103,7 +103,7 @@ impl PrinterDevice {
 #[cfg(test)]
 mod tests {
     use super::PrinterDevice;
-    use crate::tests::get_test_device;
+    use crate::test_utils::null_device;
 
     #[test]
     fn fetch_printer_device() {
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_printer_should_be_local() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         assert!(device.is_local());
         assert_eq!(device.is_remote(), false);
         assert_eq!(device.os_server(), "");

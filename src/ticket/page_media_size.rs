@@ -61,13 +61,13 @@ impl From<PageMediaSize> for PrintTicket {
 #[cfg(test)]
 mod tests {
     use crate::{
-        tests::get_test_device,
+        test_utils::null_device,
         ticket::{PredefinedMediaName, PrintCapabilities, PrintTicketBuilder},
     };
 
     #[test]
     fn use_page_media_size() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
         for media in capabilities.page_media_size() {
             let mut builder = PrintTicketBuilder::new(&device).unwrap();
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn get_size() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
         for media in capabilities.page_media_size() {
             let size = media.size();
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn a4_should_be_found() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
         capabilities
             .page_media_size()

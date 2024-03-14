@@ -107,12 +107,12 @@ impl FilePrinter for XpsPrinter {
 #[cfg(test)]
 mod tests {
     use super::XpsPrinter;
-    use crate::{printer::FilePrinter, tests::get_test_device};
+    use crate::{printer::FilePrinter, test_utils::null_device};
     use std::path::Path;
 
     #[test]
     fn print_simple_xps_document() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         let xps = XpsPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
         xps.print(path.as_path(), Default::default()).unwrap();

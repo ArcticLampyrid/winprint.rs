@@ -152,16 +152,16 @@ impl PrintCapabilities {
 #[cfg(test)]
 mod tests {
     use super::PrintCapabilities;
-    use crate::tests::get_test_device;
+    use crate::test_utils::null_device;
     #[test]
     fn test_fetch_xml() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         PrintCapabilities::fetch_xml(&device).unwrap();
     }
 
     #[test]
     fn test_fetch_xml_and_parse() {
-        let device = get_test_device();
+        let device = null_device::thread_local();
         PrintCapabilities::fetch(&device).unwrap();
     }
 }
