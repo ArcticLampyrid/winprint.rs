@@ -42,16 +42,16 @@ impl Default for PrintTicket {
 /// Represents an error occurred while converting print ticket to dev mode.
 pub enum ToDevModeError {
     /// Failed to open print ticket provider.
-    #[error("Failed to open print ticket provider: {0}")]
+    #[error("Failed to open print ticket provider")]
     OpenProviderFailed(#[source] windows::core::Error),
     /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
     /// Failed to convert print ticket to dev mode.
-    #[error("Failed to convert print ticket to dev mode: {0}")]
+    #[error("Failed to convert print ticket to dev mode")]
     ConvertPrintTicketToDevModeFailed(String, #[source] windows::core::Error),
     /// Failed to open printer.
-    #[error("Failed to open printer: {0}")]
+    #[error("Failed to open printer")]
     FailedToOpenPrinter(#[source] windows::core::Error),
     /// Failed to correct dev mode via [`DocumentProperties`].
     ///

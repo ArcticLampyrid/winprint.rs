@@ -27,19 +27,19 @@ use xml::name::OwnedName;
 /// Represents an error occurred while fetching print capabilities.
 pub enum FetchPrintCapabilitiesError {
     /// Failed to open print ticket provider.
-    #[error("Failed to open print ticket provider: {0}")]
+    #[error("Failed to open print ticket provider")]
     OpenProviderFailed(#[source] windows::core::Error),
     /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
     /// Cannot get print capabilities.
-    #[error("Cannot get print capabilities: {0}")]
+    #[error("Cannot get print capabilities")]
     CannotGetPrintCapabilities(String, #[source] windows::core::Error),
     /// Failed to read stream.
-    #[error("Failed to read stream: {0}")]
+    #[error("Failed to read stream")]
     ReadStreamFailed(#[source] windows::core::Error),
     /// Failed to parse print capabilities.
-    #[error("Failed to parse print capabilities: {0}")]
+    #[error("Failed to parse print capabilities")]
     ParseError(#[source] ParsePrintSchemaError),
 }
 

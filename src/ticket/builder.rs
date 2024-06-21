@@ -25,16 +25,16 @@ pub struct PrintTicketBuilder {
 /// Represents an error occurred while building a print ticket.
 pub enum PrintTicketBuilderError {
     /// Failed to open print ticket provider.
-    #[error("Failed to open print ticket provider: {0}")]
+    #[error("Failed to open print ticket provider")]
     OpenProviderFailed(#[source] windows::core::Error),
     /// Stream not allocated.
     #[error("Stream not allocated")]
     StreamNotAllocated,
     /// Failed to merge print tickets.
-    #[error("Failed to merge print tickets: {0}")]
+    #[error("Failed to merge print tickets")]
     MergePrintTicketsFailed(String, #[source] windows::core::Error),
     /// Failed to decode print ticket.
-    #[error("Failed to decode print ticket: {0}")]
+    #[error("Failed to decode print ticket")]
     DecodePrintTicketFailed(#[source] windows::core::Error),
 }
 

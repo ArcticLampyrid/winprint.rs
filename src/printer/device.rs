@@ -19,7 +19,7 @@ pub struct PrinterDevice {
 /// Represents an error occurred while enumerating printer devices.
 pub enum EnumDeviceError {
     /// Failed to enum printer device.
-    #[error("Failed to enum printer device: {0}")]
+    #[error("Failed to enum printer device")]
     FailedToEnumPrinterDevice(#[source] windows::core::Error),
 }
 

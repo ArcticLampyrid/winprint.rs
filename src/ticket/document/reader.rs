@@ -17,7 +17,7 @@ use xml::{
 /// Represents an error occurred while parsing print schema.
 pub enum ParsePrintSchemaError {
     /// Invalid XML.
-    #[error("Invalid xml: {0}")]
+    #[error("Invalid xml")]
     InvalidXml(#[source] xml::reader::Error),
     /// Invalid print schema.
     #[error("Invalid print schema: (at {pos}) {reason}")]

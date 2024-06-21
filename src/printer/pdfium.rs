@@ -27,10 +27,10 @@ pub enum PdfiumPrinterError {
     #[error("Failed to open printer")]
     FailedToOpenPrinter,
     /// File I/O error.
-    #[error("File I/O error: {0}")]
+    #[error("File I/O error")]
     FileIOError(#[source] std::io::Error),
     /// Print ticket error.
-    #[error("Print Ticker Error: {0}")]
+    #[error("Print Ticker Error")]
     PrintTicketError(#[source] ToDevModeError),
 }
 
