@@ -3,7 +3,7 @@ use super::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
         ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption,
     },
-    FeatureOptionPack, PageMediaSize, PageOrientation,
+    DocumentDuplex, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation,
 };
 use crate::{
     printer::PrinterDevice,
@@ -151,6 +151,22 @@ impl PrintCapabilities {
     /// Get all supported page orientations.
     pub fn page_orientation(&self) -> impl Iterator<Item = PageOrientation> + '_ {
         PageOrientation::list(self)
+    }
+
+    /// Get all supported job duplex types.
+    ///
+    /// # Note
+    /// This is not the same as document duplex types. All Documents in the job are duplexed together contiguously.
+    pub fn job_duplex(&self) -> impl Iterator<Item = JobDuplex> + '_ {
+        JobDuplex::list(self)
+    }
+
+    /// Get all supported document duplex types.
+    ///
+    /// # Note
+    /// This is not the same as job duplex types. Each document in the job is duplexed separately.
+    pub fn document_duplex(&self) -> impl Iterator<Item = DocumentDuplex> + '_ {
+        DocumentDuplex::list(self)
     }
 }
 

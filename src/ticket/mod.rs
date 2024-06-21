@@ -1,20 +1,26 @@
 mod builder;
 /// Document object model representation of print schema.
 pub mod document;
+mod document_duplex;
 mod feature_option_pack;
+mod job_duplex;
 mod media_size_tuple;
 mod page_media_size;
 mod page_orientation;
+mod predefined_duplex_type;
 mod predefined_media_name;
 mod predefined_page_orientation;
 mod print_capabilities;
 mod print_ticket;
 
 pub use builder::*;
+pub use document_duplex::*;
 pub use feature_option_pack::*;
+pub use job_duplex::*;
 pub use media_size_tuple::*;
 pub use page_media_size::*;
 pub use page_orientation::*;
+pub use predefined_duplex_type::*;
 pub use predefined_media_name::*;
 pub use predefined_page_orientation::*;
 pub use print_capabilities::*;
