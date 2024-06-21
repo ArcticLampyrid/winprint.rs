@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::{cell::OnceCell, process::Stdio, sync::OnceLock};
 
 thread_local! {
-    static NULL_DEVICE: OnceCell<NullPrinterDevice> = OnceCell::new();
+    static NULL_DEVICE: OnceCell<NullPrinterDevice> = const { OnceCell::new() };
 }
 static DEVICE_ID_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static PORT_AND_DRIVER_INSTALLER: OnceLock<()> = OnceLock::new();
