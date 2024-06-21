@@ -1,14 +1,12 @@
 use crate::bindings::pdfium::*;
-use lazy_static::lazy_static;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 
 pub struct PdfiumGuard {
     inited: bool,
 }
-lazy_static! {
-    static ref PDFIUM_GUARD: Mutex<PdfiumGuard> = Mutex::new(PdfiumGuard::new());
-}
+
 impl PdfiumGuard {
     fn new() -> PdfiumGuard {
         PdfiumGuard { inited: false }
@@ -31,7 +29,11 @@ impl PdfiumGuard {
         }
     }
     pub fn get() -> MutexGuard<'static, PdfiumGuard> {
-        PDFIUM_GUARD.lock().unwrap()
+        static PDFIUM_GUARD: OnceLock<Mutex<PdfiumGuard>> = OnceLock::new();
+        PDFIUM_GUARD
+            .get_or_init(|| Mutex::new(PdfiumGuard::new()))
+            .lock()
+            .unwrap()
     }
     pub fn guard() -> MutexGuard<'static, PdfiumGuard> {
         let mut x = Self::get();
