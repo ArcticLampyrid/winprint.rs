@@ -7,9 +7,11 @@ mod job_duplex;
 mod media_size_tuple;
 mod page_media_size;
 mod page_orientation;
+mod page_output_color;
 mod predefined_duplex_type;
 mod predefined_media_name;
 mod predefined_page_orientation;
+mod predefined_page_output_color;
 mod print_capabilities;
 mod print_ticket;
 
@@ -20,9 +22,11 @@ pub use job_duplex::*;
 pub use media_size_tuple::*;
 pub use page_media_size::*;
 pub use page_orientation::*;
+pub use page_output_color::*;
 pub use predefined_duplex_type::*;
 pub use predefined_media_name::*;
 pub use predefined_page_orientation::*;
+pub use predefined_page_output_color::*;
 pub use print_capabilities::*;
 pub use print_ticket::*;
 
