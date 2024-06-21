@@ -4,6 +4,7 @@ use super::{
         ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption,
     },
     DocumentDuplex, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
+    PageResolution,
 };
 use crate::{
     printer::PrinterDevice,
@@ -172,6 +173,11 @@ impl PrintCapabilities {
     /// Get all supported page output colors.
     pub fn page_output_color(&self) -> impl Iterator<Item = PageOutputColor> + '_ {
         PageOutputColor::list(self)
+    }
+
+    /// Get all supported page resolutions.
+    pub fn page_resolution(&self) -> impl Iterator<Item = PageResolution> + '_ {
+        PageResolution::list(self)
     }
 }
 
