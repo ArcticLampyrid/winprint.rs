@@ -68,7 +68,7 @@ impl FilePrinter for PdfiumPrinter {
                 return Err(PdfiumPrinterError::FailedToOpenPrinter);
             }
             defer! {
-                DeleteDC(hdc_print);
+                let _ = DeleteDC(hdc_print);
             }
             let mut doc_name = wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref()));
             let doc_info = DOCINFOW {
@@ -109,7 +109,7 @@ impl FilePrinter for PdfiumPrinter {
                     let h = page_height * scale;
                     let org_x = -get_attr(PHYSICALOFFSETX);
                     let org_y = -get_attr(PHYSICALOFFSETY);
-                    SetViewportOrgEx(hdc_print, org_x, org_y, None);
+                    let _ = SetViewportOrgEx(hdc_print, org_x, org_y, None);
                     FPDF_RenderPage(hdc_print, page, 0, 0, w as i32, h as i32, 0, FPDF_PRINTING);
                     EndPage(hdc_print);
                 }
