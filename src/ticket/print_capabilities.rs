@@ -145,12 +145,12 @@ impl PrintCapabilities {
     }
 
     /// Get all page media sizes.
-    pub fn page_media_size(&self) -> impl Iterator<Item = PageMediaSize> + '_ {
+    pub fn page_media_sizes(&self) -> impl Iterator<Item = PageMediaSize> + '_ {
         PageMediaSize::list(self)
     }
 
     /// Get all supported page orientations.
-    pub fn page_orientation(&self) -> impl Iterator<Item = PageOrientation> + '_ {
+    pub fn page_orientations(&self) -> impl Iterator<Item = PageOrientation> + '_ {
         PageOrientation::list(self)
     }
 
@@ -158,7 +158,7 @@ impl PrintCapabilities {
     ///
     /// # Note
     /// This is not the same as document duplex types. All Documents in the job are duplexed together contiguously.
-    pub fn job_duplex(&self) -> impl Iterator<Item = JobDuplex> + '_ {
+    pub fn job_duplexes(&self) -> impl Iterator<Item = JobDuplex> + '_ {
         JobDuplex::list(self)
     }
 
@@ -166,17 +166,17 @@ impl PrintCapabilities {
     ///
     /// # Note
     /// This is not the same as job duplex types. Each document in the job is duplexed separately.
-    pub fn document_duplex(&self) -> impl Iterator<Item = DocumentDuplex> + '_ {
+    pub fn document_duplexes(&self) -> impl Iterator<Item = DocumentDuplex> + '_ {
         DocumentDuplex::list(self)
     }
 
     /// Get all supported page output colors.
-    pub fn page_output_color(&self) -> impl Iterator<Item = PageOutputColor> + '_ {
+    pub fn page_output_colors(&self) -> impl Iterator<Item = PageOutputColor> + '_ {
         PageOutputColor::list(self)
     }
 
     /// Get all supported page resolutions.
-    pub fn page_resolution(&self) -> impl Iterator<Item = PageResolution> + '_ {
+    pub fn page_resolutions(&self) -> impl Iterator<Item = PageResolution> + '_ {
         PageResolution::list(self)
     }
 }

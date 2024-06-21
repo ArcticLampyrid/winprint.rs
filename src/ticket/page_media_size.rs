@@ -44,7 +44,7 @@ mod tests {
     fn use_page_media_size() {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
-        for media in capabilities.page_media_size() {
+        for media in capabilities.page_media_sizes() {
             let mut builder = PrintTicketBuilder::new(&device).unwrap();
             builder.merge(media).unwrap();
         }
@@ -54,7 +54,7 @@ mod tests {
     fn get_size() {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
-        for media in capabilities.page_media_size() {
+        for media in capabilities.page_media_sizes() {
             let size = media.size();
             assert!(
                 size.width_in_micron() | size.height_in_micron() > 0,
@@ -68,7 +68,7 @@ mod tests {
     fn get_display_name() {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
-        for media in capabilities.page_media_size() {
+        for media in capabilities.page_media_sizes() {
             let display_name = media.display_name();
             assert!(
                 display_name.is_some(),
@@ -83,7 +83,7 @@ mod tests {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
         capabilities
-            .page_media_size()
+            .page_media_sizes()
             .find(|x| x.as_predefined_name() == Some(PredefinedMediaName::ISOA4))
             .unwrap();
     }

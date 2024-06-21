@@ -39,7 +39,7 @@ mod tests {
     fn use_page_resolution() {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
-        for resolution in capabilities.page_resolution() {
+        for resolution in capabilities.page_resolutions() {
             let mut builder = PrintTicketBuilder::new(&device).unwrap();
             builder.merge(resolution).unwrap();
         }
@@ -49,7 +49,7 @@ mod tests {
     fn get_dpi() {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
-        for resolution in capabilities.page_resolution() {
+        for resolution in capabilities.page_resolutions() {
             let (x, y) = resolution.dpi();
             assert!(x > 0);
             assert!(y > 0);

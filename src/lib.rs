@@ -76,7 +76,7 @@
 //! let my_device = get_my_device();
 //! let capabilities = PrintCapabilities::fetch(&my_device).unwrap();
 //! let a4_media = capabilities
-//!     .page_media_size()
+//!     .page_media_sizes()
 //!     .find(|x| x.as_predefined_name() == Some(PredefinedMediaName::ISOA4))
 //!     .unwrap();
 //! let mut builder = PrintTicketBuilder::new(&my_device).unwrap();

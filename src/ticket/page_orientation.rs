@@ -25,7 +25,7 @@ mod tests {
         let device = null_device::thread_local();
         let capabilities = PrintCapabilities::fetch(&device).unwrap();
         let option = capabilities
-            .page_orientation()
+            .page_orientations()
             .find(|x| x.as_predefined_name() == Some(PredefinedPageOrientation::Landscape))
             .unwrap();
         println!("Using {:?}", option.display_name());
