@@ -1,7 +1,7 @@
 use super::{
     document::{
-        ParameterInit, PrintFeature, PrintFeatureOption, PrintTicketDocument, WithScoredProperties,
-        NS_PSK,
+        ParameterInit, PrintFeature, PrintFeatureOption, PrintTicketDocument, WithProperties,
+        WithScoredProperties, NS_PSK,
     },
     MediaSizeTuple, PredefinedMediaName, PrintTicket,
 };
@@ -37,6 +37,14 @@ impl PageMediaSize {
             .and_then(|x| x.integer())
             .unwrap_or_default();
         MediaSizeTuple::micron(width as u32, height as u32)
+    }
+
+    /// Get display name of the page orientation.
+    pub fn display_name(&self) -> Option<&str> {
+        self.option
+            .get_property("DisplayName", Some(NS_PSK))
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.string())
     }
 
     /// Get the predefined name of the media.
@@ -91,6 +99,20 @@ mod tests {
             assert!(
                 size.width_in_micron() | size.height_in_micron() > 0,
                 "Size is zero for {:#?}",
+                media
+            );
+        }
+    }
+
+    #[test]
+    fn get_display_name() {
+        let device = null_device::thread_local();
+        let capabilities = PrintCapabilities::fetch(&device).unwrap();
+        for media in capabilities.page_media_size() {
+            let display_name = media.display_name();
+            assert!(
+                display_name.is_some(),
+                "Display name is not found for {:#?}",
                 media
             );
         }
