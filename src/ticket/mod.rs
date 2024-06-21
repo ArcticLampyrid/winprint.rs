@@ -1,6 +1,7 @@
 mod builder;
 /// Document object model representation of print schema.
 pub mod document;
+mod feature_option_pack;
 mod media_size_tuple;
 mod page_media_size;
 mod page_orientation;
@@ -10,6 +11,7 @@ mod print_capabilities;
 mod print_ticket;
 
 pub use builder::*;
+pub use feature_option_pack::*;
 pub use media_size_tuple::*;
 pub use page_media_size::*;
 pub use page_orientation::*;

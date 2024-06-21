@@ -66,6 +66,7 @@
 //! use winprint::printer::FilePrinter;
 //! use winprint::printer::PrinterDevice;
 //! use winprint::printer::XpsPrinter;
+//! use winprint::ticket::FeatureOptionPackWithPredefined;
 //! use winprint::ticket::PredefinedMediaName;
 //! use winprint::ticket::PrintCapabilities;
 //! use winprint::ticket::PrintTicket;

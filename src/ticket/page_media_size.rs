@@ -1,27 +1,17 @@
 use super::{
-    document::{
-        ParameterInit, PrintFeature, PrintFeatureOption, PrintTicketDocument, WithProperties,
-        WithScoredProperties, NS_PSK,
-    },
-    MediaSizeTuple, PredefinedMediaName, PrintTicket,
+    define_feature_option_pack,
+    document::{ParameterInit, PrintFeatureOption, WithScoredProperties, NS_PSK},
+    MediaSizeTuple, PredefinedMediaName,
 };
 use xml::name::OwnedName;
 
-#[derive(Clone, Debug)]
-/// Represents a page media size.
-pub struct PageMediaSize {
-    /// The DOM of the option for media size.
-    pub option: PrintFeatureOption,
-    /// The parameters that is referenced by the option.
-    pub parameters: Vec<ParameterInit>,
-}
+define_feature_option_pack!(
+    OwnedName::qualified("PageMediaSize", NS_PSK, Some("psk")),
+    PageMediaSize,
+    PredefinedMediaName
+);
 
 impl PageMediaSize {
-    /// Create a new [`PageMediaSize`] from the given DOM.
-    pub fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self {
-        Self { option, parameters }
-    }
-
     /// Get the size of the media.
     pub fn size(&self) -> MediaSizeTuple {
         let width = self
@@ -38,46 +28,16 @@ impl PageMediaSize {
             .unwrap_or_default();
         MediaSizeTuple::micron(width as u32, height as u32)
     }
-
-    /// Get display name of the page orientation.
-    pub fn display_name(&self) -> Option<&str> {
-        self.option
-            .get_property("DisplayName", Some(NS_PSK))
-            .and_then(|x| x.value.as_ref())
-            .and_then(|x| x.string())
-    }
-
-    /// Get the predefined name of the media.
-    /// If the media is not predefined, `None` is returned.
-    pub fn as_predefined_name(&self) -> Option<PredefinedMediaName> {
-        self.option
-            .name
-            .as_ref()
-            .and_then(PredefinedMediaName::from_name)
-    }
-}
-
-impl From<PageMediaSize> for PrintTicket {
-    fn from(value: PageMediaSize) -> Self {
-        PrintTicketDocument {
-            properties: vec![],
-            parameter_inits: value.parameters,
-            features: vec![PrintFeature {
-                name: OwnedName::qualified("PageMediaSize", NS_PSK, Some("psk")),
-                properties: vec![],
-                options: vec![value.option],
-                features: vec![],
-            }],
-        }
-        .into()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         test_utils::null_device,
-        ticket::{PredefinedMediaName, PrintCapabilities, PrintTicketBuilder},
+        ticket::{
+            FeatureOptionPack, FeatureOptionPackWithPredefined, PredefinedMediaName,
+            PrintCapabilities, PrintTicketBuilder,
+        },
     };
 
     #[test]

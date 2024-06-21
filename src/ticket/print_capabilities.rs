@@ -1,9 +1,9 @@
 use super::{
     document::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
-        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption, NS_PSK,
+        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption,
     },
-    PageMediaSize, PageOrientation,
+    FeatureOptionPack, PageMediaSize, PageOrientation,
 };
 use crate::{
     printer::PrinterDevice,
@@ -129,48 +129,28 @@ impl PrintCapabilities {
     }
 
     /// Get all options for the given feature.
-    pub fn options_for_feature<'a>(
-        &'a self,
-        feature_name: &'a str,
-        namespace: Option<&'a str>,
-    ) -> impl Iterator<Item = &PrintFeatureOption> + 'a {
+    pub fn options_for_feature(
+        &self,
+        feature_name: OwnedName,
+    ) -> impl Iterator<Item = &PrintFeatureOption> + '_ {
         self.document
             .features
             .iter()
             .filter(move |x| {
-                x.name.local_name == feature_name && x.name.namespace_ref() == namespace
+                x.name.local_name == feature_name.local_name
+                    && x.name.namespace == feature_name.namespace
             })
             .flat_map(|x| x.options.iter())
     }
 
-    fn collect_default_parameters_for_option(
-        &self,
-        option: &PrintFeatureOption,
-    ) -> Vec<ParameterInit> {
-        self.default_parameters_for(option.parameters_dependent().as_slice())
-            .collect()
-    }
-
     /// Get all page media sizes.
     pub fn page_media_size(&self) -> impl Iterator<Item = PageMediaSize> + '_ {
-        self.options_for_feature("PageMediaSize", Some(NS_PSK))
-            .map(|option| {
-                PageMediaSize::new(
-                    option.clone(),
-                    self.collect_default_parameters_for_option(option),
-                )
-            })
+        PageMediaSize::list(self)
     }
 
     /// Get all supported page orientations.
     pub fn page_orientation(&self) -> impl Iterator<Item = PageOrientation> + '_ {
-        self.options_for_feature("PageOrientation", Some(NS_PSK))
-            .map(|option| {
-                PageOrientation::new(
-                    option.clone(),
-                    self.collect_default_parameters_for_option(option),
-                )
-            })
+        PageOrientation::list(self)
     }
 }
 
