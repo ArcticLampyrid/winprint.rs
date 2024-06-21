@@ -3,7 +3,7 @@ use super::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
         ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption, NS_PSK,
     },
-    PageMediaSize,
+    PageMediaSize, PageOrientation,
 };
 use crate::{
     printer::PrinterDevice,
@@ -156,6 +156,17 @@ impl PrintCapabilities {
         self.options_for_feature("PageMediaSize", Some(NS_PSK))
             .map(|option| {
                 PageMediaSize::new(
+                    option.clone(),
+                    self.collect_default_parameters_for_option(option),
+                )
+            })
+    }
+
+    /// Get all supported page orientations.
+    pub fn page_orientation(&self) -> impl Iterator<Item = PageOrientation> + '_ {
+        self.options_for_feature("PageOrientation", Some(NS_PSK))
+            .map(|option| {
+                PageOrientation::new(
                     option.clone(),
                     self.collect_default_parameters_for_option(option),
                 )
