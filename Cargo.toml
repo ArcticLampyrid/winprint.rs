@@ -19,19 +19,34 @@ strum = { version = "0.26", features = ["derive"] }
 thiserror = "1.0"
 fmt-derive = "0.1"
 xml = "0.8"
+windows-core = "0.58"
 
 [dependencies.windows]
-version = "0.57"
+version = "0.58"
 features = [
+    "implement",
+    "Data_Pdf",
+    "Storage",
+    "Storage_Streams",
     "Win32_Foundation",
     "Win32_Globalization",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_Graphics_Imaging_D2D",
     "Win32_Graphics_Printing",
     "Win32_Graphics_Printing_PrintTicket",
     "Win32_Security",
     "Win32_Storage_Xps_Printing",
     "Win32_System_Com",
+    "Win32_System_Ole",
     "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_WinRT_Pdf",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ]

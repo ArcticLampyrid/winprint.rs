@@ -9,8 +9,8 @@ use windows::{
     Win32::{
         Graphics::Printing::PrintTicket::{
             kPTJobScope, PTCloseProvider, PTMergeAndValidatePrintTicket, PTOpenProvider,
+            HPTPROVIDER,
         },
-        Storage::Xps::HPTPROVIDER,
         UI::Shell::SHCreateMemStream,
     },
 };
