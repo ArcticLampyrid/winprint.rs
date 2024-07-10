@@ -1,9 +1,11 @@
 use crate::printer::FilePrinter;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
+use crate::ticket::ToDevModeError;
 use crate::utils::print_completion_source::PrintCompletionSource;
 use crate::utils::wchar;
 use scopeguard::defer;
+use std::cmp::max;
 use std::path::Path;
 use std::ptr;
 use thiserror::Error;
@@ -19,6 +21,7 @@ use windows::Win32::Graphics::Direct2D::ID2D1Factory1;
 use windows::Win32::Graphics::Direct2D::D2D1_DEVICE_CONTEXT_OPTIONS_NONE;
 use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_OPTIONS;
 use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_TYPE_SINGLE_THREADED;
+use windows::Win32::Graphics::Direct2D::D2D1_PRINT_CONTROL_PROPERTIES;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::D3D11CreateDevice;
 use windows::Win32::Graphics::Direct3D11::ID3D11Device;
@@ -26,6 +29,7 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use windows::Win32::Graphics::Direct3D11::D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 use windows::Win32::Graphics::Direct3D11::D3D11_SDK_VERSION;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+use windows::Win32::Graphics::Gdi::DEVMODEW;
 use windows::Win32::Graphics::Imaging::CLSID_WICImagingFactory2;
 use windows::Win32::Graphics::Imaging::D2D::IWICImagingFactory2;
 use windows::Win32::Storage::Xps::Printing::IPrintDocumentPackageStatusEvent;
@@ -44,6 +48,9 @@ use windows::Win32::UI::Shell::SHCreateMemStream;
 #[derive(Error, Debug)]
 /// Represents an error from [`WinPdfPrinter`].
 pub enum WinPdfPrinterError {
+    /// Print ticket error.
+    #[error("Print Ticker Error")]
+    PrintTicketError(#[source] ToDevModeError),
     /// Failed to create event.
     #[error("Failed to create event")]
     FailedToCreateEvent(#[source] windows::core::Error),
@@ -79,6 +86,8 @@ impl WinPdfPrinter {
     }
 }
 
+const DEFAULT_DPI: i16 = 300;
+
 impl FilePrinter for WinPdfPrinter {
     type Options = PrintTicket;
     type Error = WinPdfPrinterError;
@@ -88,6 +97,32 @@ impl FilePrinter for WinPdfPrinter {
         options: PrintTicket,
     ) -> std::result::Result<(), WinPdfPrinterError> {
         unsafe {
+            let dev_mode = options
+                .to_dev_mode(&self.printer)
+                .map_err(WinPdfPrinterError::PrintTicketError)?;
+            let raster_dpi = {
+                let dev_mode = &*(dev_mode.as_ptr() as *const DEVMODEW);
+                let dpi_x = if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_PRINTQUALITY)
+                    .0
+                    != 0
+                {
+                    Some(dev_mode.Anonymous1.Anonymous1.dmPrintQuality)
+                } else {
+                    None
+                };
+                let dpi_y =
+                    if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_YRESOLUTION).0 != 0 {
+                        Some(dev_mode.dmYResolution)
+                    } else {
+                        None
+                    };
+                match (dpi_x, dpi_y) {
+                    (Some(x), Some(y)) => max(x, y),
+                    (Some(x), None) => x,
+                    (None, Some(y)) => y,
+                    (None, None) => DEFAULT_DPI,
+                }
+            };
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             defer! {
                 CoUninitialize();
@@ -157,8 +192,16 @@ impl FilePrinter for WinPdfPrinter {
                     &print_ticket_stream,
                 )
                 .map_err(WinPdfPrinterError::FailedToStartJob)?;
+            let print_control_options = D2D1_PRINT_CONTROL_PROPERTIES {
+                rasterDPI: raster_dpi as f32,
+                ..Default::default()
+            };
             let print_control = d2d_device
-                .CreatePrintControl(&wic_factory, &document_target, None)
+                .CreatePrintControl(
+                    &wic_factory,
+                    &document_target,
+                    Some(ptr::addr_of!(print_control_options)),
+                )
                 .map_err(WinPdfPrinterError::FailedToStartJob)?;
 
             let completion_source =
