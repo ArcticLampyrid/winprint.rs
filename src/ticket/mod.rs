@@ -1,4 +1,5 @@
 mod builder;
+mod copies;
 /// Document object model representation of print schema.
 pub mod document;
 mod feature_option_pack;
@@ -16,6 +17,7 @@ mod print_capabilities;
 mod print_ticket;
 
 pub use builder::*;
+pub use copies::*;
 pub use feature_option_pack::*;
 pub use job_duplex::*;
 pub use media_size_tuple::*;

@@ -1,9 +1,11 @@
 use super::{
     document::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
-        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption,
+        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption, WithProperties, NS_PSF,
+        NS_PSK,
     },
-    FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor, PageResolution,
+    Copies, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
+    PageResolution,
 };
 use crate::{
     printer::PrinterDevice,
@@ -169,6 +171,26 @@ impl PrintCapabilities {
     /// Get all supported page resolutions.
     pub fn page_resolutions(&self) -> impl Iterator<Item = PageResolution> + '_ {
         PageResolution::list(self)
+    }
+
+    /// Get the maximum number of copies that a printer can print. Return `None` if the device does not report a maximum.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `JobCopiesAllDocuments` keyword, not the `DocumentCopiesAllPages` keyword, or the `PageCopies` keyword. If the printer can print unlimited copies, the property value is 9999.
+    pub fn max_copies(&self) -> Option<Copies> {
+        println!("{:#?}", self.document.parameter_defs);
+        self.document
+            .parameter_defs
+            .iter()
+            .find(|x| {
+                x.name.local_name == "JobCopiesAllDocuments"
+                    && x.name.namespace_ref() == Some(NS_PSK)
+            })
+            .and_then(|x| x.get_property("MaxValue", Some(NS_PSF)))
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.integer())
+            .and_then(|x| u16::try_from(x).ok())
+            .map(Copies)
     }
 }
 
