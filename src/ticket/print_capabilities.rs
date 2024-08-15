@@ -3,8 +3,7 @@ use super::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
         ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption,
     },
-    DocumentDuplex, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
-    PageResolution,
+    FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor, PageResolution,
 };
 use crate::{
     printer::PrinterDevice,
@@ -157,17 +156,9 @@ impl PrintCapabilities {
     /// Get all supported job duplex types.
     ///
     /// # Note
-    /// This is not the same as document duplex types. All Documents in the job are duplexed together contiguously.
-    pub fn job_duplexes(&self) -> impl Iterator<Item = JobDuplex> + '_ {
+    /// This corresponds to the Print Schema's `JobDuplexAllDocumentsContiguously` keyword, not the `DocumentDuplex` keyword.
+    pub fn duplexes(&self) -> impl Iterator<Item = JobDuplex> + '_ {
         JobDuplex::list(self)
-    }
-
-    /// Get all supported document duplex types.
-    ///
-    /// # Note
-    /// This is not the same as job duplex types. Each document in the job is duplexed separately.
-    pub fn document_duplexes(&self) -> impl Iterator<Item = DocumentDuplex> + '_ {
-        DocumentDuplex::list(self)
     }
 
     /// Get all supported page output colors.
