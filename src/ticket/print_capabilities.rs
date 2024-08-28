@@ -5,7 +5,7 @@ use super::{
         NS_PSK,
     },
     Copies, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
-    PageResolution,
+    PageResolution, PrintTicket,
 };
 use crate::{
     printer::PrinterDevice,
@@ -55,6 +55,14 @@ pub struct PrintCapabilities {
 impl PrintCapabilities {
     /// Fetch print capabilities XML (without parsing it) for the given printer device.
     pub fn fetch_xml(device: &PrinterDevice) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
+        Self::fetch_xml_for_ticket(device, None)
+    }
+
+    /// Fetch print capabilities XML (without parsing it) for the given printer device and print ticket.
+    pub fn fetch_xml_for_ticket(
+        device: &PrinterDevice,
+        ticket: Option<&PrintTicket>,
+    ) -> Result<Vec<u8>, FetchPrintCapabilitiesError> {
         unsafe {
             let provider =
                 PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
@@ -64,16 +72,26 @@ impl PrintCapabilities {
             }
             let stream =
                 SHCreateMemStream(None).ok_or(FetchPrintCapabilitiesError::StreamNotAllocated)?;
+            let ticket_stream = ticket
+                .map(|x| {
+                    SHCreateMemStream(Some(x.get_xml()))
+                        .ok_or(FetchPrintCapabilitiesError::StreamNotAllocated)
+                })
+                .transpose()?;
 
             let mut error_message = BSTR::default();
-            PTGetPrintCapabilities(provider, None, &stream, Some(&mut error_message)).map_err(
-                |win32_error| {
-                    FetchPrintCapabilitiesError::CannotGetPrintCapabilities(
-                        error_message.to_string(),
-                        win32_error,
-                    )
-                },
-            )?;
+            PTGetPrintCapabilities(
+                provider,
+                ticket_stream.as_ref(),
+                &stream,
+                Some(&mut error_message),
+            )
+            .map_err(|win32_error| {
+                FetchPrintCapabilitiesError::CannotGetPrintCapabilities(
+                    error_message.to_string(),
+                    win32_error,
+                )
+            })?;
 
             let data =
                 read_com_stream(&stream).map_err(FetchPrintCapabilitiesError::ReadStreamFailed)?;
