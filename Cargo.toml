@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "winprint"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["ArcticLampyrid <ArcticLampyrid@outlook.com>"]
 keywords = ["printer", "printing", "xps", "pdf"]
 categories = ["api-bindings", "os::windows-apis"]
