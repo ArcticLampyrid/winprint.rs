@@ -14,8 +14,9 @@ use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::Graphics::Gdi::{
-        CreateDCW, DeleteDC, GetDeviceCaps, SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, LOGPIXELSX,
-        LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
+        CreateDCW, DeleteDC, GetDeviceCaps, SetBrushOrgEx, SetGraphicsMode, SetStretchBltMode,
+        SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, GM_ADVANCED, HALFTONE, LOGPIXELSX, LOGPIXELSY,
+        PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
     },
     Win32::Storage::Xps::*,
 };
@@ -58,8 +59,11 @@ impl FilePrinter for PdfiumPrinter {
             let dev_mode = options
                 .to_dev_mode(&self.printer)
                 .map_err(PdfiumPrinterError::PrintTicketError)?;
+            // Use "WINSPOOL" as driver name, matching Chromium's approach.
+            // See: chromium/printing/printing_context_win.cc InitializeSettings()
+            let driver_name = wchar::to_wide_chars("WINSPOOL");
             let hdc_print = CreateDCW(
-                None,
+                PCWSTR(driver_name.as_ptr()),
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 None,
                 Some(dev_mode.as_ptr() as *const _),
@@ -70,6 +74,11 @@ impl FilePrinter for PdfiumPrinter {
             defer! {
                 let _ = DeleteDC(hdc_print);
             }
+            // Initialize DC the same way Chromium does (skia::InitializeDC):
+            // See: chromium/skia/ext/skia_utils_win.cc InitializeDC()
+            SetGraphicsMode(hdc_print, GM_ADVANCED);
+            SetStretchBltMode(hdc_print, HALFTONE);
+            let _ = SetBrushOrgEx(hdc_print, 0, 0, None);
             let mut doc_name = wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref()));
             let doc_info = DOCINFOW {
                 cbSize: mem::size_of::<DOCINFOW>() as i32,
