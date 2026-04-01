@@ -18,8 +18,10 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         OsStr::new("so"),
         OsStr::new("a"),
     ];
+    let build_id = env::var("WINPRINT_PDFIUM_BUILD_ID")
+        .unwrap_or_else(|_| "6350".to_string());
     let mut target_path = PathBuf::from(env::var("OUT_DIR")?);
-    target_path.push("pdfium_binaries");
+    target_path.push(format!("pdfium_binaries_{}", build_id));
     fs::create_dir_all(target_path.as_path())?;
     let has_bin = fs::read_dir(target_path.as_path())?.any(|x| {
         bin_ext.iter().any(|s| {
@@ -36,7 +38,6 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         })
     });
     if !has_bin {
-        let build_id = 6350;
 
         let platform_name = match (
             env::var("CARGO_CFG_TARGET_OS")?.as_str(),
@@ -89,6 +90,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=WINPRINT_PDFIUM_BUILD_ID");
     // Skip downloading native libraries on docs.rs
     if std::env::var("DOCS_RS").is_ok() {
         return;
