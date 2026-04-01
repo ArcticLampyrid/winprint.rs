@@ -18,8 +18,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         OsStr::new("so"),
         OsStr::new("a"),
     ];
-    let build_id = env::var("WINPRINT_PDFIUM_BUILD_ID")
-        .unwrap_or_else(|_| "6350".to_string());
+    let build_id = env::var("WINPRINT_PDFIUM_BUILD_ID").unwrap_or_else(|_| "6350".to_string());
     let mut target_path = PathBuf::from(env::var("OUT_DIR")?);
     target_path.push(format!("pdfium_binaries_{}", build_id));
     fs::create_dir_all(target_path.as_path())?;
@@ -38,7 +37,6 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         })
     });
     if !has_bin {
-
         let platform_name = match (
             env::var("CARGO_CFG_TARGET_OS")?.as_str(),
             env::var("CARGO_CFG_TARGET_ARCH")?.as_str(),
