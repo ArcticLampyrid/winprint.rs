@@ -4,10 +4,12 @@ use std::{
     error::Error,
     ffi::OsStr,
     fs,
+    io::Read as _,
     path::{Path, PathBuf},
 };
 
 use flate2::read::GzDecoder;
+use sha2::{Digest, Sha256};
 use tar::{Archive, EntryType};
 
 #[allow(dead_code)]
@@ -49,7 +51,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
         };
 
         let binary_package_url = format!("https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F{}/pdfium-{}.tgz", build_id, platform_name);
-        let resp = reqwest::blocking::get(binary_package_url.as_str())?;
+        let mut resp = reqwest::blocking::get(binary_package_url.as_str())?;
         if resp.status() != 200 {
             return Err(format!(
                 "Failed to download pdfium binaries from {}",
@@ -57,7 +59,22 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
             )
             .into());
         }
-        let tar = GzDecoder::new(resp);
+        let mut body = Vec::new();
+        resp.read_to_end(&mut body)?;
+
+        if let Ok(expected) = env::var("WINPRINT_PDFIUM_SHA256") {
+            let hash = Sha256::digest(&body);
+            let actual: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+            if !actual.eq_ignore_ascii_case(&expected) {
+                return Err(format!(
+                    "SHA-256 checksum mismatch for {}\n  expected: {}\n  actual:   {}",
+                    binary_package_url, expected, actual
+                )
+                .into());
+            }
+        }
+
+        let tar = GzDecoder::new(body.as_slice());
         let mut archive = Archive::new(tar);
         for entry in archive.entries()? {
             let mut file = entry?;
@@ -89,6 +106,7 @@ fn try_link_pdfium() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=WINPRINT_PDFIUM_SHA256");
     // Skip downloading native libraries on docs.rs
     if std::env::var("DOCS_RS").is_ok() {
         return;
