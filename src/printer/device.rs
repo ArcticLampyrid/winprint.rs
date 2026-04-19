@@ -1,10 +1,11 @@
 use crate::utils::wchar;
-use scopeguard::defer;
 use std::alloc::{alloc, dealloc, Layout};
 use std::ffi::{OsStr, OsString};
 use std::mem;
+use std::ptr;
 use thiserror::Error;
 use windows::core::PCWSTR;
+use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 use windows::Win32::Graphics::Printing::*;
 #[derive(Clone, Debug)]
 /// Represents a printer device.
@@ -26,40 +27,58 @@ pub enum EnumDeviceError {
 impl PrinterDevice {
     /// Fetch all printer devices.
     pub fn all() -> Result<Vec<Self>, EnumDeviceError> {
-        let mut bytes_needed = 0;
-        let mut count_returned = 0;
+        let mut bytes_needed: u32 = 0;
+        let mut count_returned: u32 = 0;
         let flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
         let name = PCWSTR::null();
         let level = 4;
         unsafe {
-            let _ = EnumPrintersW(
-                flags,
-                name,
-                level,
-                None,
-                &mut bytes_needed,
-                &mut count_returned,
-            );
-            let buffer_layout = Layout::from_size_align_unchecked(
-                bytes_needed as usize,
-                mem::align_of::<PRINTER_INFO_4W>(),
-            );
-            let buffer = alloc(buffer_layout);
-            defer! {
-                dealloc(buffer, buffer_layout);
+            let mut buffer: *mut u8 = ptr::null_mut();
+            let mut buffer_size: usize = 0;
+
+            loop {
+                let slice = if buffer_size > 0 {
+                    Some(std::slice::from_raw_parts_mut(buffer, buffer_size))
+                } else {
+                    None
+                };
+                let result = EnumPrintersW(
+                    flags,
+                    name,
+                    level,
+                    slice,
+                    &mut bytes_needed,
+                    &mut count_returned,
+                );
+                match result {
+                    Ok(()) => break,
+                    Err(e) if e.code() == ERROR_INSUFFICIENT_BUFFER.to_hresult() => {
+                        let new_size = bytes_needed as usize;
+                        let align = mem::align_of::<PRINTER_INFO_4W>();
+                        if buffer_size > 0 {
+                            dealloc(
+                                buffer,
+                                Layout::from_size_align_unchecked(buffer_size, align),
+                            );
+                        }
+                        buffer = alloc(Layout::from_size_align_unchecked(new_size, align));
+                        buffer_size = new_size;
+                    }
+                    Err(e) => {
+                        if buffer_size > 0 {
+                            dealloc(
+                                buffer,
+                                Layout::from_size_align_unchecked(
+                                    buffer_size,
+                                    mem::align_of::<PRINTER_INFO_4W>(),
+                                ),
+                            );
+                        }
+                        return Err(EnumDeviceError::FailedToEnumPrinterDevice(e));
+                    }
+                }
             }
-            EnumPrintersW(
-                flags,
-                name,
-                level,
-                Some(std::slice::from_raw_parts_mut(
-                    buffer,
-                    bytes_needed as usize,
-                )),
-                &mut bytes_needed,
-                &mut count_returned,
-            )
-            .map_err(EnumDeviceError::FailedToEnumPrinterDevice)?;
+
             let mut result = Vec::<PrinterDevice>::with_capacity(count_returned as usize);
             for i in 0..count_returned {
                 let info = &*(buffer as *const PRINTER_INFO_4W).offset(i as isize);
@@ -71,6 +90,17 @@ impl PrinterDevice {
                     os_name,
                 });
             }
+
+            if buffer_size > 0 {
+                dealloc(
+                    buffer,
+                    Layout::from_size_align_unchecked(
+                        buffer_size,
+                        mem::align_of::<PRINTER_INFO_4W>(),
+                    ),
+                );
+            }
+
             Ok(result)
         }
     }
