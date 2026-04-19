@@ -1,0 +1,65 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV.fetch("VAGRANT_BOX", "gusztavvargadr/windows-11")
+  config.vm.box_check_update = false
+  config.vm.communicator = "winrm"
+  config.vm.guest = :windows
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider "libvirt" do |libvirt|
+    libvirt.driver = ENV.fetch("LIBVIRT_DRIVER", "kvm")
+    libvirt.memory = ENV.fetch("VM_MEMORY", "16384").to_i
+    libvirt.cpus = ENV.fetch("VM_CPUS", "8").to_i
+  end
+
+  config.winrm.max_tries = 300
+  config.winrm.retry_delay = 5
+
+  # Install Rust + MSVC toolchain
+  config.vm.provision "setup", run: "once", type: "shell",
+      privileged: true, powershell_elevated_interactive: false, inline: <<~PS
+    $ErrorActionPreference = "Stop"
+    Set-StrictMode -Version Latest
+    $PSNativeCommandUseErrorActionPreference = $true
+
+    # Disable firewall
+    Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+
+    # Install Chocolatey
+    Invoke-Expression "& { $(Invoke-RestMethod 'https://aka.ms/install-powershell.ps1') } -AddToPath"
+    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+
+    Import-Module "$env:ChocolateyInstall\\helpers\\chocolateyProfile.psm1"
+    
+    # Enable too long paths
+    New-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+
+    # Install MSVC Tools + Windows SDK
+    choco install -y visualstudio2026buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US"
+
+    # Install sccache
+    winget install --source=winget --id=Mozilla.sccache -e --silent --accept-source-agreements --accept-package-agreements
+
+    # Rust toolchain
+    Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile "$env:TEMP\\rustup-init.exe"
+    & "$env:TEMP\\rustup-init.exe" -y
+    Remove-Item "$env:TEMP\\rustup-init.exe"
+    Update-SessionEnvironment
+    cargo +stable install cargo-hack --locked
+  PS
+
+  # Run tests (called on demand via: vagrant provision --provision-with run-tests)
+  config.vm.provision "run-tests", run: "never", type: "shell",
+      privileged: true, powershell_elevated_interactive: false, inline: <<~PS
+    Import-Module "$env:ChocolateyInstall\\helpers\\chocolateyProfile.psm1"
+    Update-SessionEnvironment
+    if (Get-Command sccache -ErrorAction SilentlyContinue) {
+      Write-Host "sccache is available, using it as RUSTC_WRAPPER"
+      $env:RUSTC_WRAPPER = "sccache"
+    }
+    Set-Location C:\\workspace
+    cargo hack test --all-targets --each-feature
+    $TEST_EXIT_CODE = $LASTEXITCODE
+    cargo clean -q
+    exit $TEST_EXIT_CODE
+  PS
+end
