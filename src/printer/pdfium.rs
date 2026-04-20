@@ -14,8 +14,9 @@ use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::Graphics::Gdi::{
-        CreateDCW, DeleteDC, GetDeviceCaps, SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, LOGPIXELSX,
-        LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
+        CreateDCW, DeleteDC, GetDeviceCaps, SetBrushOrgEx, SetGraphicsMode, SetStretchBltMode,
+        SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, GM_ADVANCED, HALFTONE, LOGPIXELSX, LOGPIXELSY,
+        PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
     },
     Win32::Storage::Xps::*,
 };
@@ -46,6 +47,14 @@ impl PdfiumPrinter {
     }
 }
 
+const PRINT_DRIVER: PCWSTR = PCWSTR(
+    [
+        'W' as u16, 'I' as u16, 'N' as u16, 'S' as u16, 'P' as u16, 'O' as u16, 'O' as u16,
+        'L' as u16, 0,
+    ]
+    .as_ptr(),
+);
+
 impl FilePrinter for PdfiumPrinter {
     type Options = PrintTicket;
     type Error = PdfiumPrinterError;
@@ -58,8 +67,16 @@ impl FilePrinter for PdfiumPrinter {
             let dev_mode = options
                 .to_dev_mode(&self.printer)
                 .map_err(PdfiumPrinterError::PrintTicketError)?;
+            // According to https://learn.microsoft.com/en-us/windows/win32/printdocs/retrieving-a-printer-device-context:
+            // > To render to a specific printer, you must specify "WINSPOOL" as the device.
+            //
+            // However, according to https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createdcw
+            // > For printing, we recommend that you pass NULL to lpszDriver because GDI ignores lpszDriver for printer devices.
+            //
+            // We check the Chromium source code and it seems that they are using "WINSPOOL" as the driver name, so we will do the same.
+            // https://github.com/chromium/chromium/blob/749ad837ac3e74e3988f4a079979e3ea7e926f25/printing/printing_context_win.cc#L489
             let hdc_print = CreateDCW(
-                None,
+                PRINT_DRIVER,
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 None,
                 Some(dev_mode.as_ptr() as *const _),
@@ -70,6 +87,12 @@ impl FilePrinter for PdfiumPrinter {
             defer! {
                 let _ = DeleteDC(hdc_print);
             }
+            SetGraphicsMode(hdc_print, GM_ADVANCED);
+            SetStretchBltMode(hdc_print, HALFTONE);
+            // After setting the HALFTONE stretching mode,
+            // an application must call the SetBrushOrgEx function to set the brush origin.
+            // If it fails to do so, brush misalignment occurs.
+            let _ = SetBrushOrgEx(hdc_print, 0, 0, None);
             let mut doc_name = wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref()));
             let doc_info = DOCINFOW {
                 cbSize: mem::size_of::<DOCINFOW>() as i32,
