@@ -1,6 +1,7 @@
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
+use crate::utils::com::ComInitializer;
 use crate::utils::print_completion_source::PrintCompletionSource;
 use crate::utils::print_completion_source::PrintCompletionWaiter;
 use crate::utils::wchar;
@@ -35,11 +36,8 @@ use windows::Win32::Storage::Xps::Printing::IPrintDocumentPackageTarget;
 use windows::Win32::Storage::Xps::Printing::IPrintDocumentPackageTargetFactory;
 use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageTargetFactory;
 use windows::Win32::System::Com::CoCreateInstance;
-use windows::Win32::System::Com::CoInitializeEx;
-use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::Com::IConnectionPointContainer;
 use windows::Win32::System::Com::CLSCTX_ALL;
-use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use windows::Win32::UI::Shell::SHCreateMemStream;
 
 #[derive(Error, Debug)]
@@ -83,28 +81,6 @@ pub struct DxgiPrintContext {
     pub completion_waiter: PrintCompletionWaiter,
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
-}
-
-#[non_exhaustive]
-struct ComInitializer {
-    // Do not use empty struct.
-    // Empty struct is easy to misuse.
-    _dummy: (),
-}
-impl ComInitializer {
-    fn new() -> ComInitializer {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        }
-        ComInitializer { _dummy: () }
-    }
-}
-impl Drop for ComInitializer {
-    fn drop(&mut self) {
-        unsafe {
-            CoUninitialize();
-        }
-    }
 }
 
 impl DxgiPrintContext {

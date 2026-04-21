@@ -3,22 +3,27 @@ use crate::printer::FilePrinter;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
+use crate::utils::emf::Emf;
 use crate::utils::pdfium::PdfiumCustomDocument;
 use crate::utils::pdfium::PdfiumGuard;
 use crate::utils::wchar;
 use scopeguard::defer;
+use std::cell::Cell;
 use std::path::Path;
 use std::ptr;
 use std::{fs::File, mem};
 use thiserror::Error;
+use windows::Win32::Foundation::RECT;
 use windows::{
     core::PCWSTR,
-    Win32::Graphics::Gdi::{
-        CreateDCW, DeleteDC, GetDeviceCaps, SetBrushOrgEx, SetGraphicsMode, SetStretchBltMode,
-        SetViewportOrgEx, GET_DEVICE_CAPS_INDEX, GM_ADVANCED, HALFTONE, LOGPIXELSX, LOGPIXELSY,
-        PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
+    Win32::{
+        Graphics::Gdi::{
+            CreateDCW, DeleteDC, GetDeviceCaps, SetBrushOrgEx, SetGraphicsMode, SetStretchBltMode,
+            GET_DEVICE_CAPS_INDEX, GM_ADVANCED, HALFTONE, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT,
+            PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH,
+        },
+        Storage::Xps::{AbortDoc, EndDoc, EndPage, StartDocW, StartPage, DOCINFOW},
     },
-    Win32::Storage::Xps::*,
 };
 
 #[derive(Error, Debug)]
@@ -33,6 +38,27 @@ pub enum PdfiumPrinterError {
     /// Print ticket error.
     #[error("Print Ticker Error")]
     PrintTicketError(#[source] ToDevModeError),
+    /// StartDoc failed.
+    #[error("StartDocW failed (returned {0})")]
+    StartDocFailed(i32),
+    /// StartPage failed.
+    #[error("StartPage failed for page {0} (returned {1})")]
+    StartPageFailed(i32, i32),
+    /// EndPage failed.
+    #[error("EndPage failed for page {0} (returned {1})")]
+    EndPageFailed(i32, i32),
+    /// EndDoc failed.
+    #[error("EndDoc failed (returned {0})")]
+    EndDocFailed(i32),
+    /// PDFium failed to load the document.
+    #[error("PDFium failed to load the document (error {0})")]
+    PdfiumLoadFailed(u32),
+    /// EMF creation failed for a page.
+    #[error("Failed to create EMF for page {0}")]
+    EmfCreateFailed(i32),
+    /// EMF playback failed for a page.
+    #[error("Failed to playback EMF for page {0}")]
+    EmfPlaybackFailed(i32),
 }
 
 /// A printer that uses Pdfium to print PDF documents.
@@ -58,6 +84,7 @@ const PRINT_DRIVER: PCWSTR = PCWSTR(
 impl FilePrinter for PdfiumPrinter {
     type Options = PrintTicket;
     type Error = PdfiumPrinterError;
+
     fn print(
         &self,
         path: &Path,
@@ -87,12 +114,14 @@ impl FilePrinter for PdfiumPrinter {
             defer! {
                 let _ = DeleteDC(hdc_print);
             }
+
             SetGraphicsMode(hdc_print, GM_ADVANCED);
             SetStretchBltMode(hdc_print, HALFTONE);
             // After setting the HALFTONE stretching mode,
             // an application must call the SetBrushOrgEx function to set the brush origin.
             // If it fails to do so, brush misalignment occurs.
             let _ = SetBrushOrgEx(hdc_print, 0, 0, None);
+
             let mut doc_name = wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref()));
             let doc_info = DOCINFOW {
                 cbSize: mem::size_of::<DOCINFOW>() as i32,
@@ -101,43 +130,104 @@ impl FilePrinter for PdfiumPrinter {
                 lpszOutput: PCWSTR::null(),
                 lpszDatatype: PCWSTR::null(),
             };
-            StartDocW(hdc_print, &doc_info);
-            {
-                let _pdfium_guard = PdfiumGuard::guard();
-                let mut file = File::open(path).map_err(PdfiumPrinterError::FileIOError)?;
-                let mut file_delegation = PdfiumCustomDocument::new(&mut file)
-                    .map_err(PdfiumPrinterError::FileIOError)?;
-                let document = FPDF_LoadCustomDocument(file_delegation.as_mut(), ptr::null());
-                defer! {
-                    FPDF_CloseDocument(document);
-                }
-                let page_count = FPDF_GetPageCount(document);
-                for page_index in 0..page_count {
-                    let page = FPDF_LoadPage(document, page_index);
-                    defer! {
-                        FPDF_ClosePage(page);
-                    }
-                    StartPage(hdc_print);
-                    let get_attr =
-                        |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(hdc_print, kind) };
-                    let dpi_x = get_attr(LOGPIXELSX);
-                    let dpi_y = get_attr(LOGPIXELSY);
-                    let page_width = FPDF_GetPageWidth(page) * dpi_x as f64 / 72.0;
-                    let page_height = FPDF_GetPageHeight(page) * dpi_y as f64 / 72.0;
-                    let physical_width = get_attr(PHYSICALWIDTH) as f64;
-                    let physical_height = get_attr(PHYSICALHEIGHT) as f64;
-                    let scale =
-                        f64::min(physical_width / page_width, physical_height / page_height);
-                    let w = page_width * scale;
-                    let h = page_height * scale;
-                    let org_x = -get_attr(PHYSICALOFFSETX);
-                    let org_y = -get_attr(PHYSICALOFFSETY);
-                    let _ = SetViewportOrgEx(hdc_print, org_x, org_y, None);
-                    FPDF_RenderPage(hdc_print, page, 0, 0, w as i32, h as i32, 0, FPDF_PRINTING);
-                    EndPage(hdc_print);
+
+            let start_doc_ret = StartDocW(hdc_print, &doc_info);
+            if start_doc_ret <= 0 {
+                return Err(PdfiumPrinterError::StartDocFailed(start_doc_ret));
+            }
+
+            let document_completed = Cell::new(false);
+            defer! {
+                if !document_completed.get() {
+                    let _ = AbortDoc(hdc_print);
                 }
             }
-            EndDoc(hdc_print);
+
+            let _pdfium_guard = PdfiumGuard::guard();
+            let mut file = File::open(path).map_err(PdfiumPrinterError::FileIOError)?;
+            let mut file_delegation =
+                PdfiumCustomDocument::new(&mut file).map_err(PdfiumPrinterError::FileIOError)?;
+            let document = FPDF_LoadCustomDocument(file_delegation.as_mut(), ptr::null());
+            if document.is_null() {
+                return Err(PdfiumPrinterError::PdfiumLoadFailed(FPDF_GetLastError()));
+            }
+            defer! {
+                FPDF_CloseDocument(document);
+            }
+
+            let get_attr = |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(hdc_print, kind) };
+            let page_count = FPDF_GetPageCount(document);
+            for page_index in 0..page_count {
+                let page = FPDF_LoadPage(document, page_index);
+                defer! {
+                    FPDF_ClosePage(page);
+                }
+
+                let start_page_ret = StartPage(hdc_print);
+                if start_page_ret <= 0 {
+                    return Err(PdfiumPrinterError::StartPageFailed(
+                        page_index,
+                        start_page_ret,
+                    ));
+                }
+                let dpi_x = get_attr(LOGPIXELSX);
+                let dpi_y = get_attr(LOGPIXELSY);
+                let page_std_width = FPDF_GetPageWidth(page);
+                let page_std_height = FPDF_GetPageHeight(page);
+                let page_width = (page_std_width * dpi_x as f64 / 72.0).round() as i32;
+                let page_height = (page_std_height * dpi_y as f64 / 72.0).round() as i32;
+                let emf = Emf::new(
+                    hdc_print,
+                    (page_std_width * 2540.0 / 72.0).round() as i32,
+                    (page_std_height * 2540.0 / 72.0).round() as i32,
+                    |hdc_emf| {
+                        SetGraphicsMode(hdc_emf, GM_ADVANCED);
+                        FPDF_RenderPage(
+                            hdc_emf,
+                            page,
+                            0,
+                            0,
+                            page_width,
+                            page_height,
+                            0,
+                            FPDF_PRINTING,
+                        );
+                        true
+                    },
+                )
+                .map_err(|_| PdfiumPrinterError::EmfCreateFailed(page_index))?;
+
+                let paper_width = get_attr(PHYSICALWIDTH);
+                let paper_height = get_attr(PHYSICALHEIGHT);
+                let scale = f64::min(
+                    paper_width as f64 / page_width as f64,
+                    paper_height as f64 / page_height as f64,
+                );
+                let actual_width = (page_width as f64 * scale).round() as i32;
+                let actual_height = (page_height as f64 * scale).round() as i32;
+                let left = -get_attr(PHYSICALOFFSETX) + (paper_width - actual_width) / 2;
+                let top = -get_attr(PHYSICALOFFSETY) + (paper_height - actual_height) / 2;
+                let target_rect = RECT {
+                    left,
+                    top,
+                    right: actual_width + left,
+                    bottom: actual_height + top,
+                };
+                let page_result = emf
+                    .playback(hdc_print, target_rect)
+                    .map_err(|_| PdfiumPrinterError::EmfPlaybackFailed(page_index));
+                let end_page_ret = EndPage(hdc_print);
+                page_result?;
+                if end_page_ret <= 0 {
+                    return Err(PdfiumPrinterError::EndPageFailed(page_index, end_page_ret));
+                }
+            }
+
+            let end_doc_ret = EndDoc(hdc_print);
+            if end_doc_ret <= 0 {
+                return Err(PdfiumPrinterError::EndDocFailed(end_doc_ret));
+            }
+            document_completed.set(true);
         }
         Ok(())
     }
