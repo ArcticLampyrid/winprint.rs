@@ -1,18 +1,19 @@
 use crate::printer::PrinterDevice;
 use sha2::{Digest, Sha256};
 use std::{
-    cell::OnceCell,
+    collections::HashSet,
+    io,
     marker::PhantomData,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
 };
 
 /// Defines a virtual "print-to-file" device backed by a built-in Windows driver.
 ///
-/// Implement this trait to expose additional file-based drivers. At present, two built-in
-/// providers are shipped: [`PwgRaster`] and [`Pdf`].
-pub trait FilePrinterProvider: Send + Sync + 'static {
+/// Implement this trait to expose additional file-based drivers. Two built-in providers are
+/// shipped: [`PwgRaster`] and [`Pdf`].
+pub trait FilePrinterProvider {
     /// Returns the Windows driver name (as accepted by `Add-Printer -DriverName`) to use for the
     /// virtual printer.
     fn driver_name() -> &'static str;
@@ -35,24 +36,27 @@ impl FilePrinterProvider for Pdf {
 }
 
 fn ps_quote(s: &str) -> String {
-    // PowerShell single-quoted string: escape ' by doubling it
+    // PowerShell single-quoted string: escape ' by doubling it.
     format!("'{}'", s.replace('\'', "''"))
 }
 
-fn run_powershell(script: &str) {
+/// Run a PowerShell script and fail with `io::Error` if PowerShell exits with a non-zero status.
+///
+/// `context` is prepended to the resulting error message for easier diagnosis.
+fn run_powershell(context: &str, script: &str) -> io::Result<()> {
     let status = Command::new("powershell")
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .args(["-NoProfile", "-Command", script])
-        .spawn()
-        .expect("failed to spawn powershell")
-        .wait()
-        .expect("failed to wait powershell");
-    // We don't propagate non-zero statuses here: the individual cmdlets use
-    // `-ErrorAction Continue`/`SilentlyContinue` and the caller verifies via
-    // `PrinterDevice::all()` after the fact.
-    let _ = status;
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("powershell failed during {context}: exit status {status:?}"),
+        ));
+    }
+    Ok(())
 }
 
 fn printer_name_for(port_path: &str) -> String {
@@ -66,8 +70,6 @@ fn printer_name_for(port_path: &str) -> String {
 }
 
 fn make_temp_port_path() -> PathBuf {
-    // Unique per-device file. We rely on (pid, atomic counter, nanos) to keep it unique without
-    // needing an extra crate.
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
@@ -84,27 +86,38 @@ fn make_temp_port_path() -> PathBuf {
     p
 }
 
-/// The one-shot cleanup / driver-install script.
-///
-/// On first use per-process we:
-///   * ensure the driver is installed,
-///   * scan for leftover `file-device-*` printers whose owning PID no longer exists and remove
-///     them along with their ports (and the backing temp files, on the Rust side we will also try
-///     to delete files on Drop).
-fn ensure_driver_and_cleanup<T: FilePrinterProvider>() {
-    let driver = T::driver_name();
-    // NOTE: we have to keep this script compatible with Windows PowerShell 5.1.
+/// Run the one-shot init script: install the driver and sweep away any leftover
+/// `file-device-*` printers owned by dead pids. Runs at most once per (process, driver).
+fn ensure_driver_and_cleanup(driver: &'static str) -> io::Result<()> {
+    static INIT: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let map = INIT.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = map.lock().expect("INIT mutex poisoned");
+    if guard.contains(driver) {
+        return Ok(());
+    }
+
+    // NOTE: keep this script compatible with Windows PowerShell 5.1.
+    //
+    // Error-handling policy:
+    //   * `$ErrorActionPreference = 'Stop'` by default — any unexpected failure aborts the
+    //     script with a non-zero exit code.
+    //   * Operations where "failure" is a legitimate expected outcome (e.g. "the printer I
+    //     just removed is already gone because a sibling process also cleaned it") are wrapped
+    //     in `try { ... } catch { Write-Warning ... }` so they are visibly reported but do
+    //     not abort the whole sweep.
     let script = format!(
         r#"
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2
 
-# Install driver if missing.
+# 1. Install the driver if missing.
 if (-not (Get-PrinterDriver -Name {driver_q} -ErrorAction SilentlyContinue)) {{
-    Add-PrinterDriver -Name {driver_q} -ErrorAction Continue
+    Add-PrinterDriver -Name {driver_q}
 }}
 
-# Minimal base58 decoder (Bitcoin alphabet) — adapted from
-# https://gist.github.com/gkostoulias/9e0af1595aaf5e6728443497a7defbe5
+# 2. Scan existing printers and remove leftovers.
+#    Minimal base58 decoder (Bitcoin alphabet) adapted from
+#    https://gist.github.com/gkostoulias/9e0af1595aaf5e6728443497a7defbe5
 function Convert-FromBase58 {{
     param([string]$s)
     $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
@@ -115,13 +128,12 @@ function Convert-FromBase58 {{
         $num = ($num * [System.Numerics.BigInteger]58) + [System.Numerics.BigInteger]$i
     }}
     $bytes = $num.ToByteArray()
-    # BigInteger is little-endian, possibly with a trailing sign byte. Strip trailing 0x00
-    # (produced for positive numbers whose top bit would otherwise be set) and reverse.
+    # BigInteger is little-endian; strip the trailing sign byte (if present) and reverse.
     if ($bytes.Length -gt 1 -and $bytes[$bytes.Length - 1] -eq 0) {{
         $bytes = $bytes[0..($bytes.Length - 2)]
     }}
     [array]::Reverse($bytes)
-    # Add leading zero bytes for each leading '1' in input (base58 convention).
+    # Add leading zero bytes for each leading '1' in the input.
     $leading = 0
     foreach ($c in $s.ToCharArray()) {{
         if ($c -eq '1') {{ $leading++ }} else {{ break }}
@@ -135,207 +147,170 @@ function Convert-FromBase58 {{
 
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 
-Get-Printer -ErrorAction SilentlyContinue | Where-Object {{
+$printers = Get-Printer | Where-Object {{
     $_.Type -eq 'Local' -and $_.DriverName -eq {driver_q} -and $_.Name -match '^file-device-(\d+)-([1-9A-HJ-NP-Za-km-z]+)$'
-}} | ForEach-Object {{
-    $p = $_
+}}
+
+foreach ($p in $printers) {{
     $m = [regex]::Match($p.Name, '^file-device-(\d+)-([1-9A-HJ-NP-Za-km-z]+)$')
-    $pid_str = $m.Groups[1].Value
-    $hash_b58 = $m.Groups[2].Value
+    $pidValue = [int]$m.Groups[1].Value
+    $hashB58  = $m.Groups[2].Value
 
     # If the owning process is still alive, leave it alone.
     $alive = $true
-    try {{
-        $proc = Get-Process -Id ([int]$pid_str) -ErrorAction Stop
-        if (-not $proc) {{ $alive = $false }}
-    }} catch {{
-        $alive = $false
-    }}
-    if ($alive) {{ return }}
+    try {{ $null = Get-Process -Id $pidValue -ErrorAction Stop }} catch {{ $alive = $false }}
+    if ($alive) {{ continue }}
 
-    # Verify the bs58(sha256(port_name)) matches the name so that we only remove printers that we
-    # created. If anything mismatches, err on the side of caution and skip.
+    # Verify bs58(sha256(port)) matches the printer name so that we only remove printers we
+    # created. Otherwise: skip and keep going.
     $portName = $p.PortName
-    if (-not $portName) {{ return }}
+    if (-not $portName) {{ continue }}
     $expected = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($portName))
-    $actual = Convert-FromBase58 $hash_b58
-    if ($null -eq $actual -or $actual.Length -ne $expected.Length) {{ return }}
+    $actual   = Convert-FromBase58 $hashB58
+    if ($null -eq $actual -or $actual.Length -ne $expected.Length) {{ continue }}
     $eq = $true
     for ($i = 0; $i -lt $expected.Length; $i++) {{
         if ($actual[$i] -ne $expected[$i]) {{ $eq = $false; break }}
     }}
-    if (-not $eq) {{ return }}
+    if (-not $eq) {{ continue }}
 
-    Remove-Printer -Name $p.Name -ErrorAction Continue
+    # Expected-to-possibly-fail operations (racing cleanups, transient spooler state, ...):
+    # wrap in try/catch so a single stale entry doesn't abort the whole sweep.
+    try {{ Remove-Printer -Name $p.Name }}
+    catch {{ Write-Warning ("Remove-Printer {{0}} failed: {{1}}" -f $p.Name, $_.Exception.Message) }}
+
     if (Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue) {{
-        Remove-PrinterPort -Name $portName -ErrorAction Continue
+        try {{ Remove-PrinterPort -Name $portName }}
+        catch {{ Write-Warning ("Remove-PrinterPort {{0}} failed: {{1}}" -f $portName, $_.Exception.Message) }}
     }}
     if (Test-Path -LiteralPath $portName) {{
-        Remove-Item -LiteralPath $portName -Force -ErrorAction Continue
+        try {{ Remove-Item -LiteralPath $portName -Force }}
+        catch {{ Write-Warning ("Remove-Item {{0}} failed: {{1}}" -f $portName, $_.Exception.Message) }}
     }}
 }}
 "#,
         driver_q = ps_quote(driver),
     );
-    run_powershell(&script);
+    run_powershell("driver install + leftover cleanup", &script)?;
+    guard.insert(driver);
+    Ok(())
 }
 
-/// A thread-local auto-managed virtual "print-to-file" device.
+/// A virtual "print-to-file" printer device backed by a built-in Windows driver.
 ///
-/// Each call to [`FilePrinterDevice::thread_local`] installs (on first use on that thread) a
-/// unique printer backed by [`FilePrinterProvider::driver_name()`] and a freshly-created temp
-/// file acting as its port. The device — and the underlying printer/port/file — are automatically
-/// torn down when the thread exits.
+/// Each instance installs a freshly-created printer port (a unique temp file) and a printer
+/// using the driver supplied by `T`. Dropping the value removes the printer, the port, and the
+/// backing temp file. Unlike `null_device`, this type is **not** thread-local or shared — each
+/// `FilePrinterDevice` owns its own printer; if you need several, construct several.
 ///
 /// ```no_run
 /// use winprint::test_utils::file_device::{FilePrinterDevice, PwgRaster};
-/// let device = FilePrinterDevice::<PwgRaster>::thread_local();
+///
+/// let dev = FilePrinterDevice::<PwgRaster>::new().unwrap();
+/// println!("printer: {}", dev.device().name());
+/// println!("output:  {}", dev.file_path().display());
+/// // ... use dev.device() for printing ...
 /// ```
 pub struct FilePrinterDevice<T: FilePrinterProvider> {
-    _phantom: PhantomData<fn() -> T>,
-}
-
-struct FilePrinterDeviceInner<T: FilePrinterProvider> {
-    printer: PrinterDevice,
+    device: PrinterDevice,
     port_path: PathBuf,
     _phantom: PhantomData<fn() -> T>,
 }
 
-impl<T: FilePrinterProvider> FilePrinterDeviceInner<T> {
-    fn new() -> Self {
-        // One-shot per (process, driver) initialization and leftover cleanup.
-        init_once::<T>();
+impl<T: FilePrinterProvider> FilePrinterDevice<T> {
+    /// Create a new virtual "print-to-file" printer.
+    ///
+    /// On first call per-process (per driver) this installs the driver and cleans up
+    /// leftover printers from previous crashed runs. Subsequent calls only create the port
+    /// and printer.
+    pub fn new() -> io::Result<Self> {
+        let driver = T::driver_name();
+        ensure_driver_and_cleanup(driver)?;
 
         let port_path = make_temp_port_path();
         let port_str = port_path.to_string_lossy().into_owned();
         let printer_name = printer_name_for(&port_str);
 
-        // If the printer already exists (shouldn't, given the random temp path, but be safe),
-        // reuse it.
-        if let Some(printer) = PrinterDevice::all()
-            .ok()
-            .and_then(|all| all.into_iter().find(|p| p.name() == printer_name))
-        {
-            return FilePrinterDeviceInner {
-                printer,
-                port_path,
-                _phantom: PhantomData,
-            };
-        }
-
-        let driver = T::driver_name();
         let script = format!(
             r#"
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2
 if (-not (Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue)) {{
-    Add-PrinterPort -Name {port_q} -ErrorAction Continue
+    Add-PrinterPort -Name {port_q}
 }}
-Add-Printer -Name {name_q} -PortName {port_q} -DriverName {driver_q} -ErrorAction Continue
+Add-Printer -Name {name_q} -PortName {port_q} -DriverName {driver_q}
 "#,
             port_q = ps_quote(&port_str),
             name_q = ps_quote(&printer_name),
             driver_q = ps_quote(driver),
         );
-        run_powershell(&script);
+        run_powershell("add printer", &script)?;
 
-        let printer = PrinterDevice::all()
-            .expect("failed to enumerate printers")
+        let device = PrinterDevice::all()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("enumerate printers: {e:?}")))?
             .into_iter()
             .find(|p| p.name() == printer_name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "failed to create file printer device (name={}, port={}, driver={})",
-                    printer_name, port_str, driver
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "virtual printer '{printer_name}' not found after creation (port='{port_str}', driver='{driver}')"
+                    ),
                 )
-            });
-        FilePrinterDeviceInner {
-            printer,
+            })?;
+
+        Ok(FilePrinterDevice {
+            device,
             port_path,
             _phantom: PhantomData,
-        }
+        })
+    }
+
+    /// Returns the underlying [`PrinterDevice`].
+    pub fn device(&self) -> &PrinterDevice {
+        &self.device
+    }
+
+    /// Returns the path to the backing file that the driver spools its output into.
+    pub fn file_path(&self) -> &Path {
+        &self.port_path
     }
 }
 
-impl<T: FilePrinterProvider> Drop for FilePrinterDeviceInner<T> {
+impl<T: FilePrinterProvider> Drop for FilePrinterDevice<T> {
     fn drop(&mut self) {
         let port_str = self.port_path.to_string_lossy().into_owned();
         let script = format!(
             r#"
-$ErrorActionPreference = 'Continue'
-Remove-Printer -Name {name_q} -ErrorAction Continue
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2
+try {{ Remove-Printer -Name {name_q} }}
+catch {{ Write-Warning ("Remove-Printer {name_bare} failed: {{0}}" -f $_.Exception.Message) }}
 if (Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue) {{
-    Remove-PrinterPort -Name {port_q} -ErrorAction Continue
+    try {{ Remove-PrinterPort -Name {port_q} }}
+    catch {{ Write-Warning ("Remove-PrinterPort failed: {{0}}" -f $_.Exception.Message) }}
 }}
 "#,
-            name_q = ps_quote(self.printer.name()),
+            name_q = ps_quote(self.device.name()),
+            name_bare = self.device.name(),
             port_q = ps_quote(&port_str),
         );
-        run_powershell(&script);
-
-        // Best-effort remove of the backing file.
-        let _ = std::fs::remove_file(&self.port_path);
-    }
-}
-
-// We need a distinct thread_local + init_once per provider type. Use a generic helper struct
-// with `OnceLock` for the init flag, keyed on the provider's driver name via a `LazyLock`-ish
-// registry implemented with a static `OnceLock<HashSet<&'static str>>` guarded by a mutex is
-// overkill; instead, since providers are distinct monomorphizations we can use a const
-// `OnceLock<()>` inside an associated function keyed by T via a helper trait.
-
-thread_local! {
-    static TLS_SLOT: std::cell::RefCell<TlsRegistry> = std::cell::RefCell::new(TlsRegistry::default());
-}
-
-#[derive(Default)]
-struct TlsRegistry {
-    entries: Vec<(std::any::TypeId, Box<dyn std::any::Any>)>,
-}
-
-fn init_once<T: FilePrinterProvider>() {
-    use std::sync::Mutex;
-    // Per-(process, driver) init flag. Keyed by TypeId so each provider initializes exactly once.
-    static INIT: OnceLock<Mutex<std::collections::HashSet<std::any::TypeId>>> = OnceLock::new();
-    let set = INIT.get_or_init(|| Mutex::new(std::collections::HashSet::new()));
-    let tid = std::any::TypeId::of::<T>();
-    let mut guard = set.lock().expect("init_once mutex poisoned");
-    if guard.insert(tid) {
-        // Drop guard before running the (slow) cleanup so we don't deadlock other threads that
-        // just need to check the flag.
-        drop(guard);
-        ensure_driver_and_cleanup::<T>();
-    }
-}
-
-impl<T: FilePrinterProvider> FilePrinterDevice<T> {
-    /// Get the thread-local printer device for provider `T`.
-    ///
-    /// The device is created on first call and automatically removed when the calling thread
-    /// exits. A leftover from a previous (crashed) process with the same driver is cleaned up
-    /// opportunistically on first call per process.
-    pub fn thread_local() -> PrinterDevice {
-        TLS_SLOT.with(|cell| {
-            let mut reg = cell.borrow_mut();
-            let tid = std::any::TypeId::of::<T>();
-            if let Some((_, any)) = reg.entries.iter().find(|(id, _)| *id == tid) {
-                let slot = any
-                    .downcast_ref::<OnceCell<FilePrinterDeviceInner<T>>>()
-                    .expect("TLS registry slot had wrong type");
-                return slot
-                    .get_or_init(FilePrinterDeviceInner::<T>::new)
-                    .printer
-                    .clone();
+        // Drop cannot propagate errors. Log and keep going so we still attempt to remove
+        // the backing file; the sweep in `ensure_driver_and_cleanup` will pick up any
+        // stragglers on the next run.
+        if let Err(e) = run_powershell("remove printer", &script) {
+            eprintln!(
+                "warning: FilePrinterDevice::drop: failed to remove printer/port: {e}"
+            );
+        }
+        if let Err(e) = std::fs::remove_file(&self.port_path) {
+            if e.kind() != io::ErrorKind::NotFound {
+                eprintln!(
+                    "warning: FilePrinterDevice::drop: failed to remove {}: {e}",
+                    self.port_path.display()
+                );
             }
-            let slot: OnceCell<FilePrinterDeviceInner<T>> = OnceCell::new();
-            slot.get_or_init(FilePrinterDeviceInner::<T>::new);
-            reg.entries.push((tid, Box::new(slot)));
-            // Re-borrow to return the just-inserted entry.
-            let (_, any) = reg.entries.last().unwrap();
-            let slot = any
-                .downcast_ref::<OnceCell<FilePrinterDeviceInner<T>>>()
-                .expect("TLS registry slot had wrong type");
-            slot.get().unwrap().printer.clone()
-        })
+        }
     }
 }
 
@@ -353,40 +328,37 @@ mod tests {
 
     #[test]
     fn pwg_raster_device_roundtrip() {
-        // In its own thread so the Drop happens inside the test.
-        let name = std::thread::spawn(|| {
-            let device = FilePrinterDevice::<PwgRaster>::thread_local();
-            let name = device.name().to_string();
-            assert!(
-                name.starts_with("file-device-"),
-                "unexpected printer name: {name}"
-            );
+        let name;
+        let path;
+        {
+            let dev = FilePrinterDevice::<PwgRaster>::new().unwrap();
+            name = dev.device().name().to_string();
+            path = dev.file_path().to_path_buf();
+            assert!(name.starts_with("file-device-"), "unexpected name: {name}");
             assert!(printer_exists(&name), "printer {name} was not created");
-            name
-        })
-        .join()
-        .unwrap();
-
-        // After the thread exits, the Drop impl should have removed the printer.
+        }
         assert!(
             !printer_exists(&name),
-            "printer {name} still present after thread exit"
+            "printer {name} still present after drop"
+        );
+        assert!(
+            !path.exists(),
+            "backing file {} still present after drop",
+            path.display()
         );
     }
 
     #[test]
     fn pdf_device_roundtrip() {
-        let name = std::thread::spawn(|| {
-            let device = FilePrinterDevice::<Pdf>::thread_local();
-            let name = device.name().to_string();
+        let name;
+        {
+            let dev = FilePrinterDevice::<Pdf>::new().unwrap();
+            name = dev.device().name().to_string();
             assert!(printer_exists(&name), "printer {name} was not created");
-            name
-        })
-        .join()
-        .unwrap();
+        }
         assert!(
             !printer_exists(&name),
-            "printer {name} still present after thread exit"
+            "printer {name} still present after drop"
         );
     }
 
@@ -397,5 +369,15 @@ mod tests {
         assert_eq!(n1, n2);
         let n3 = printer_name_for(r"C:\Temp\bar.prn");
         assert_ne!(n1, n3);
+    }
+
+    #[test]
+    fn two_devices_coexist() {
+        let a = FilePrinterDevice::<PwgRaster>::new().unwrap();
+        let b = FilePrinterDevice::<PwgRaster>::new().unwrap();
+        assert_ne!(a.device().name(), b.device().name());
+        assert_ne!(a.file_path(), b.file_path());
+        assert!(printer_exists(a.device().name()));
+        assert!(printer_exists(b.device().name()));
     }
 }
