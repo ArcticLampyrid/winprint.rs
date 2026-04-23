@@ -15,7 +15,9 @@
 //! The argument picks the driver (`pwg` → `Microsoft PWG Raster Class Driver`, `pdf` →
 //! `Microsoft Print To PDF`).
 use std::path::{Path, PathBuf};
-use winprint::printer::{FilePrinter, PdfiumPrinter, XpsPrinter};
+use winprint::printer::{FilePrinter, XpsPrinter};
+#[cfg(feature = "pdfium")]
+use winprint::printer::PdfiumPrinter;
 use winprint::test_utils::file_device::{FilePrinterDevice, Pdf, PwgRaster};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,6 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Then a PDF, via PDFium.
+    #[cfg(feature = "pdfium")]
     if pdf_path.exists() {
         println!("printing PDF: {}", pdf_path.display());
         let pdf = PdfiumPrinter::new(device.clone());
@@ -53,6 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  -> PDF print submitted");
     } else {
         println!("skipping PDF: {} not found", pdf_path.display());
+    }
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = pdf_path;
+        println!("skipping PDF: pdfium feature is disabled");
     }
 
     // We let the thread-local be dropped at process exit so the printer/port/file are cleaned up
