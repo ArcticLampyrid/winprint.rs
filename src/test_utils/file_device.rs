@@ -8,6 +8,7 @@ use std::{
     process::{Command, Stdio},
     sync::{Mutex, OnceLock},
 };
+use uuid::Uuid;
 
 /// Defines a virtual "print-to-file" device backed by a built-in Windows driver.
 ///
@@ -70,18 +71,11 @@ fn printer_name_for(port_path: &str) -> String {
 }
 
 fn make_temp_port_path() -> PathBuf {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let uuid = Uuid::new_v4();
     let mut p = std::env::temp_dir();
     p.push(format!(
-        "winprint-file-device-{}-{}-{}.prn",
-        std::process::id(),
-        n,
-        nanos
+        "winprint-file-device-{}.prn",
+        uuid.as_simple().to_string()
     ));
     p
 }
@@ -295,22 +289,9 @@ if (Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue) {{
             name_bare = self.device.name(),
             port_q = ps_quote(&port_str),
         );
-        // Drop cannot propagate errors. Log and keep going so we still attempt to remove
-        // the backing file; the sweep in `ensure_driver_and_cleanup` will pick up any
-        // stragglers on the next run.
-        if let Err(e) = run_powershell("remove printer", &script) {
-            eprintln!(
-                "warning: FilePrinterDevice::drop: failed to remove printer/port: {e}"
-            );
-        }
-        if let Err(e) = std::fs::remove_file(&self.port_path) {
-            if e.kind() != io::ErrorKind::NotFound {
-                eprintln!(
-                    "warning: FilePrinterDevice::drop: failed to remove {}: {e}",
-                    self.port_path.display()
-                );
-            }
-        }
+        // Drop cannot propagate errors.
+        let _ = run_powershell("remove printer", &script);
+        let _ = std::fs::remove_file(&self.port_path);
     }
 }
 
