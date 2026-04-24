@@ -9,7 +9,6 @@ use thiserror::Error;
 use windows::{
     core::{BSTR, PCWSTR},
     Win32::{
-        Foundation::{HANDLE, HWND},
         Graphics::{
             Gdi::{DM_IN_BUFFER, DM_OUT_BUFFER},
             Printing::{
@@ -18,6 +17,7 @@ use windows::{
                     kPTJobScope, kUserDefaultDevmode, PTCloseProvider,
                     PTConvertPrintTicketToDevMode, PTOpenProvider, PTReleaseMemory,
                 },
+                PRINTER_HANDLE,
             },
         },
         UI::{Shell::SHCreateMemStream, WindowsAndMessaging::IDOK},
@@ -115,7 +115,7 @@ impl PrintTicket {
 
             let printer_name = wchar::to_wide_chars(device.os_name());
             let printer_handle = {
-                let mut printer_handle = HANDLE::default();
+                let mut printer_handle = PRINTER_HANDLE::default();
                 OpenPrinterW(
                     PCWSTR(printer_name.as_ptr()),
                     ptr::addr_of_mut!(printer_handle),
@@ -129,7 +129,7 @@ impl PrintTicket {
             }
 
             let mut buffer_size = DocumentPropertiesW(
-                HWND::default(),
+                None,
                 printer_handle,
                 PCWSTR(printer_name.as_ptr()),
                 None,
@@ -143,7 +143,7 @@ impl PrintTicket {
 
             let mut buffer = vec![0u8; buffer_size as usize];
             if DocumentPropertiesW(
-                HWND::default(),
+                None,
                 printer_handle,
                 PCWSTR(printer_name.as_ptr()),
                 Some(buffer.as_mut_ptr() as *mut _),

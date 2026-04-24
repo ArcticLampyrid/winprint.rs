@@ -10,7 +10,7 @@ use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::CloseHandle,
+        Foundation::{CloseHandle, HANDLE},
         Storage::Xps::{Printing::*, *},
         System::{Com::*, Threading::*},
     },
@@ -74,7 +74,7 @@ impl FilePrinter for XpsPrinter {
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 PCWSTR(wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref())).as_ptr()),
                 None,
-                None,
+                HANDLE::default(),
                 event,
                 &[],
                 ptr::null_mut(),

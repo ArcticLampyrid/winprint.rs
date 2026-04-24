@@ -17,20 +17,16 @@ use windows::Win32::System::Threading::CreateEventW;
 use windows::Win32::System::Threading::SetEvent;
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::System::Threading::INFINITE;
-use windows::Win32::System::Variant::VT_BYREF;
-use windows::{
-    core::implement,
-    Win32::{
-        Foundation::E_NOTIMPL,
-        Storage::Xps::Printing::{
-            IPrintDocumentPackageStatusEvent, IPrintDocumentPackageStatusEvent_Impl,
-            PrintDocumentPackageStatus,
-        },
-        System::Com::{
-            IDispatch, IDispatch_Impl, ITypeInfo, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO,
-        },
+use windows::Win32::System::Variant::{VARIANT, VT_BYREF};
+use windows::Win32::{
+    Foundation::E_NOTIMPL,
+    Storage::Xps::Printing::{
+        IPrintDocumentPackageStatusEvent, IPrintDocumentPackageStatusEvent_Impl,
+        PrintDocumentPackageStatus,
     },
+    System::Com::{IDispatch, IDispatch_Impl, ITypeInfo, DISPATCH_FLAGS, DISPPARAMS, EXCEPINFO},
 };
+use windows_implement::implement;
 
 #[implement(IPrintDocumentPackageStatusEvent, IDispatch)]
 pub struct PrintCompletionSource {
@@ -128,7 +124,7 @@ impl IDispatch_Impl for PrintCompletionSource_Impl {
         _lcid: u32,
         wflags: DISPATCH_FLAGS,
         pdispparams: *const DISPPARAMS,
-        pvarresult: *mut windows::core::VARIANT,
+        pvarresult: *mut VARIANT,
         pexcepinfo: *mut EXCEPINFO,
         puargerr: *mut u32,
     ) -> windows::core::Result<()> {
@@ -143,8 +139,8 @@ impl IDispatch_Impl for PrintCompletionSource_Impl {
                 return Err(windows::core::Error::from_hresult(DISP_E_BADPARAMCOUNT));
             }
             let arg = unsafe { &*params.rgvarg };
-            let vt = unsafe { arg.as_raw().Anonymous.Anonymous.vt };
-            if vt & VT_BYREF.0 == 0 {
+            let vt = unsafe { arg.Anonymous.Anonymous.vt };
+            if vt.0 & VT_BYREF.0 == 0 {
                 if !puargerr.is_null() {
                     unsafe {
                         *puargerr = 0;
@@ -152,7 +148,7 @@ impl IDispatch_Impl for PrintCompletionSource_Impl {
                 }
                 return Err(windows::core::Error::from_hresult(DISP_E_TYPEMISMATCH));
             }
-            let status = unsafe { arg.as_raw().Anonymous.Anonymous.Anonymous.byref }
+            let status = unsafe { arg.Anonymous.Anonymous.Anonymous.byref }
                 as *const PrintDocumentPackageStatus;
             if let Err(e) = self.PackageStatusUpdated(status) {
                 if !pexcepinfo.is_null() {

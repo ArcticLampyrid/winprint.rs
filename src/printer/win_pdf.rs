@@ -62,11 +62,11 @@ impl FilePrinter for WinPdfPrinter {
                 std::path::absolute(path).map_err(WinPdfPrinterError::InvalidPath)?;
             let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(absolute_path.as_path()))
                 .map_err(WinPdfPrinterError::FailedToOpenDocument)?
-                .get()
+                .join()
                 .map_err(WinPdfPrinterError::FailedToOpenDocument)?;
             let pdf_document = PdfDocument::LoadFromFileAsync(&file)
                 .map_err(WinPdfPrinterError::FailedToOpenDocument)?
-                .get()
+                .join()
                 .map_err(WinPdfPrinterError::FailedToOpenDocument)?;
 
             let pdf_renderer =

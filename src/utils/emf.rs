@@ -62,7 +62,7 @@ impl Emf {
         };
 
         let emf_hdc = CreateEnhMetaFileW(
-            hdc,
+            Some(hdc),
             PCWSTR::null(),
             Some(ptr::addr_of!(frame)),
             PCWSTR::null(),
@@ -97,9 +97,7 @@ impl Emf {
             let _ = SetWorldTransform(printer_hdc, ptr::addr_of!(base_matrix));
         }
 
-        let mut context = EnumerationContext {
-            base_matrix,
-        };
+        let mut context = EnumerationContext { base_matrix };
 
         let mut header = ENHMETAHEADER::default();
         if GetEnhMetaFileHeader(
@@ -111,7 +109,7 @@ impl Emf {
             return Err(EmfPlaybackFailedError);
         }
         if EnumEnhMetaFile(
-            printer_hdc,
+            Some(printer_hdc),
             self.metafile,
             Some(Self::playback_proc),
             Some((&mut context as *mut EnumerationContext).cast()),
@@ -147,7 +145,7 @@ impl Emf {
 impl Drop for Emf {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteEnhMetaFile(self.metafile);
+            let _ = DeleteEnhMetaFile(Some(self.metafile));
         }
     }
 }

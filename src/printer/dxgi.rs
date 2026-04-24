@@ -12,6 +12,7 @@ use thiserror::Error;
 use windows::core::Interface;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::E_UNEXPECTED;
+use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct2D::D2D1CreateFactory;
 use windows::Win32::Graphics::Direct2D::ID2D1Device;
 use windows::Win32::Graphics::Direct2D::ID2D1DeviceContext;
@@ -124,7 +125,7 @@ impl DxgiPrintContext {
             D3D11CreateDevice(
                 None,
                 D3D_DRIVER_TYPE_HARDWARE,
-                None,
+                HMODULE::default(),
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 None,
                 D3D11_SDK_VERSION,

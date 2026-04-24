@@ -155,7 +155,8 @@ impl FilePrinter for PdfiumPrinter {
                 FPDF_CloseDocument(document);
             }
 
-            let get_attr = |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(hdc_print, kind) };
+            let get_attr =
+                |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(Some(hdc_print), kind) };
             let page_count = FPDF_GetPageCount(document);
             for page_index in 0..page_count {
                 let page = FPDF_LoadPage(document, page_index);
