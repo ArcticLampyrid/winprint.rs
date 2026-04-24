@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn pwg_raster_device_roundtrip() {
+    fn pwg_raster_device_lifetime() {
         let name;
         let path;
         {
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn pdf_device_roundtrip() {
+    fn pdf_device_lifetime() {
         let name;
         {
             let dev = FilePrinterDevice::<Pdf>::new().unwrap();
