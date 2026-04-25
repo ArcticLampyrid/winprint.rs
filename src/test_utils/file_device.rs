@@ -170,11 +170,11 @@ foreach ($p in $printers) {{
 
     # Expected-to-possibly-fail operations (racing cleanups, transient spooler state, ...):
     # wrap in try/catch so a single stale entry doesn't abort the whole sweep.
-    try {{ Remove-Printer -Name $p.Name }}
+    try {{ Remove-Printer -InputObject $p }}
     catch {{ Write-Warning ("Remove-Printer {{0}} failed: {{1}}" -f $p.Name, $_.Exception.Message) }}
 
-    if (Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue) {{
-        try {{ Remove-PrinterPort -Name $portName }}
+    if ($port = Get-PrinterPort -Name $portName -ErrorAction SilentlyContinue) {{
+        try {{ Remove-PrinterPort -InputObject $port }}
         catch {{ Write-Warning ("Remove-PrinterPort {{0}} failed: {{1}}" -f $portName, $_.Exception.Message) }}
     }}
     if (Test-Path -LiteralPath $portName) {{
@@ -280,15 +280,16 @@ impl<T: FilePrinterProvider> Drop for FilePrinterDevice<T> {
             r#"
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
-try {{ Remove-Printer -Name {name_q} }}
-catch {{ Write-Warning ("Remove-Printer {name_bare} failed: {{0}}" -f $_.Exception.Message) }}
-if (Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue) {{
-    try {{ Remove-PrinterPort -Name {port_q} }}
+if ($p = Get-Printer -Name {name_q} -ErrorAction SilentlyContinue) {{
+    try {{ Remove-Printer -InputObject $p }}
+    catch {{ Write-Warning ("Remove-Printer {{0}} failed: {{1}}" -f {name_q}, $_.Exception.Message) }}
+}}
+if ($port = Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue) {{
+    try {{ Remove-PrinterPort -InputObject $port }}
     catch {{ Write-Warning ("Remove-PrinterPort failed: {{0}}" -f $_.Exception.Message) }}
 }}
 "#,
             name_q = ps_quote(self.device.name()),
-            name_bare = self.device.name(),
             port_q = ps_quote(&port_str),
         );
         // Drop cannot propagate errors.
