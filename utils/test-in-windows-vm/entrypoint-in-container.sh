@@ -70,9 +70,7 @@ run_stage "Cleaning up previous workspace on VM" vagrant provision --provision-w
 run_stage "Uploading workspace to VM" upload_workspace "${UPLOAD_DIR}"
 
 TEST_CODE=0
-if ! run_stage "Running tests" vagrant provision --provision-with run-tests; then
-    TEST_CODE=$?
-fi
+run_stage "Running tests" vagrant provision --provision-with run-tests || TEST_CODE=$?
 
 run_stage "Cleaning up workspace after tests" vagrant provision --provision-with cleanup
 run_stage "Shutting down VM" vagrant halt
