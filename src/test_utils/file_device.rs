@@ -70,14 +70,14 @@ fn printer_name_for(port_path: &str) -> String {
     )
 }
 
-fn make_temp_port_path() -> PathBuf {
+fn make_temp_port_path() -> io::Result<PathBuf> {
     let uuid = Uuid::new_v4();
-    let mut p = std::env::temp_dir();
+    let mut p = std::env::temp_dir().canonicalize()?;
     p.push(format!(
         "winprint-file-device-{}.prn",
         uuid.as_simple().to_string()
     ));
-    p
+    Ok(p)
 }
 
 /// Run the one-shot init script: install the driver and sweep away any leftover
@@ -221,8 +221,10 @@ impl<T: FilePrinterProvider> FilePrinterDevice<T> {
         let driver = T::driver_name();
         ensure_driver_and_cleanup(driver)?;
 
-        let port_path = make_temp_port_path();
-        let port_str = port_path.to_string_lossy().into_owned();
+        let port_path = make_temp_port_path()?;
+        let port_str = port_path
+            .to_str()
+            .ok_or(io::Error::other("contains non-Unicode chars in path"))?;
         let printer_name = printer_name_for(&port_str);
 
         let script = format!(
