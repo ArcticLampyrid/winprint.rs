@@ -532,20 +532,126 @@ mod tests {
         assert_eq!(print_bytes("blend-fits", &blended, Some(300)).unwrap(), 1);
     }
 
+    /// The CPU time this process has used so far.
+    fn cpu_time() -> std::time::Duration {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+        let (mut created, mut exited, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        unsafe {
+            GetProcessTimes(
+                GetCurrentProcess(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        }
+        .unwrap();
+        let ticks = |f: FILETIME| (u64::from(f.dwHighDateTime) << 32) | u64::from(f.dwLowDateTime);
+        std::time::Duration::from_nanos((ticks(kernel) + ticks(user)) * 100)
+    }
+
+    /// Run `work` on a thread of its own, saying every five seconds that it is still going and
+    /// how much CPU the process has used since it began, so a long run shows whether it moves.
+    /// Past `deadline` the process is aborted with that said: a call that never returns cannot be
+    /// cancelled.
+    fn with_heartbeat<R: Send>(
+        label: &str,
+        deadline: std::time::Duration,
+        work: impl FnOnce() -> R + Send,
+    ) -> (R, std::time::Duration) {
+        let started = std::time::Instant::now();
+        let cpu_started = cpu_time();
+        std::thread::scope(|scope| {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            scope.spawn(move || {
+                let _ = sender.send(work());
+            });
+            loop {
+                match receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+                    Ok(result) => {
+                        let elapsed = started.elapsed();
+                        eprintln!(
+                            "[{label}] done in {elapsed:.1?} ({:.1?} CPU)",
+                            cpu_time() - cpu_started
+                        );
+                        return (result, elapsed);
+                    }
+                    Err(_) if started.elapsed() > deadline => {
+                        eprintln!("[{label}] no result after {deadline:?}: giving up");
+                        std::process::abort();
+                    }
+                    Err(_) => eprintln!(
+                        "[{label}] running for {:.0?}, {:.1?} CPU",
+                        started.elapsed(),
+                        cpu_time() - cpu_started
+                    ),
+                }
+            }
+        })
+    }
+
     /// Overlapping blended rectangles of 25000 x 16667 px (6000 x 4000 pt at 300 dpi) make a layer
     /// of about 1.7 GB: Direct2D refuses it whole (`D2DERR_EXCEEDS_MAX_BITMAP_SIZE`, in 2 ms) and
     /// the page is drawn in tiles. Whether a layer fits depends on the GPU, and compositing that
-    /// much takes many minutes, so this runs on request.
+    /// much takes a long time, so this runs on request.
+    ///
+    /// It first times two small overlaps (1500 and 3000 px squares) and says what the growth
+    /// predicts for the big one, then prints the big page with a heartbeat line every five
+    /// seconds, giving up after `WINPRINT_BLEND_SECS` (default 900).
     #[test]
     #[ignore = "slow, and depends on the GPU's memory"]
     fn a_blended_layer_that_does_not_fit_is_drawn_in_tiles() {
+        let deadline = std::time::Duration::from_secs(
+            std::env::var("WINPRINT_BLEND_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(900),
+        );
+        let overlap = |px: u32| {
+            let pt = px * 72 / 300;
+            pdf(
+                (14_400, 14_400),
+                None,
+                BLEND,
+                &format!(
+                    "1 0 0 rg 20 20 {pt} {pt} re f /G1 gs 0 0 1 rg {} {} {pt} {pt} re f",
+                    20 + pt / 2,
+                    20 + pt / 2
+                ),
+            )
+        };
+        let mut seconds = Vec::new();
+        for px in [1500u32, 3000] {
+            let bytes = overlap(px);
+            let (tiles, elapsed) = with_heartbeat(&format!("{px} px overlap"), deadline, || {
+                print_bytes(&format!("blend-{px}"), &bytes, Some(300)).unwrap()
+            });
+            assert_eq!(tiles, 1);
+            seconds.push(elapsed.as_secs_f64());
+        }
+        // Time grows as side^k; the layer here is 25000 px a side, drawn in tiles of at most 8192.
+        let k = (seconds[1] / seconds[0]).log2();
+        let tile_estimate = seconds[1] * (8192.0f64 / 3000.0).powf(k);
+        eprintln!(
+            "growth ~ side^{k:.1}: a whole 25000 px layer would take ~{:.0} s, each 8192 px tile ~{tile_estimate:.0} s",
+            seconds[1] * (25000.0f64 / 3000.0).powf(k)
+        );
         let blended = pdf(
             (14_400, 14_400),
             None,
             BLEND,
             "1 0 0 rg 200 200 6000 4000 re f /G1 gs 0 0 1 rg 3000 2000 6000 4000 re f",
         );
-        assert!(print_bytes("blend-large", &blended, Some(300)).unwrap() > 1);
+        let (tiles, _) = with_heartbeat("large blend", deadline, || {
+            print_bytes("blend-large", &blended, Some(300)).unwrap()
+        });
+        assert!(tiles > 1);
     }
 
     fn exceeds() -> windows::core::Error {
