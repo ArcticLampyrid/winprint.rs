@@ -78,7 +78,7 @@ impl FilePrinter for WinPdfPrinter {
         path: &Path,
         options: PrintTicket,
     ) -> std::result::Result<(), WinPdfPrinterError> {
-        self.print_at(path, options, None).map(|_| ())
+        self.print_at(path, options, None, None).map(|_| ())
     }
 }
 
@@ -86,6 +86,19 @@ impl FilePrinter for WinPdfPrinter {
 const DIP_PER_INCH: f32 = 96.0;
 
 impl WinPdfPrinter {
+    /// Print `path` always in square tiles of `side` pixels, to check that tiles print like the
+    /// whole page.
+    #[cfg(feature = "test-utils")]
+    #[doc(hidden)]
+    pub fn print_in_tiles(
+        &self,
+        path: &Path,
+        options: PrintTicket,
+        side: u32,
+    ) -> std::result::Result<usize, WinPdfPrinterError> {
+        self.print_at(path, options, None, Some(side))
+    }
+
     /// Print `path` rendering at `dpi`, else at the job's resolution (the DEVMODE of the ticket).
     ///
     /// `Windows.Data.Pdf` draws the images of a page at the destination size, 96 dpi by default
@@ -101,6 +114,7 @@ impl WinPdfPrinter {
         path: &Path,
         options: PrintTicket,
         dpi: Option<u32>,
+        tile: Option<u32>,
     ) -> std::result::Result<usize, WinPdfPrinterError> {
         let mut most_tiles = 1;
         let context = DxgiPrintContext::new(
@@ -214,7 +228,11 @@ impl WinPdfPrinter {
                 };
                 // The print control converts the command list when the page is added, and that is
                 // where it refuses a layer it cannot rasterise in one bitmap.
-                let side = first_that_fits(&tile_sides(width_px, height_px), |side| {
+                let sides = match tile {
+                    Some(side) => vec![Some(side)],
+                    None => tile_sides(width_px, height_px),
+                };
+                let side = first_that_fits(&sides, |side| {
                     let command_list = draw(side)?;
                     print_control.AddPage(&command_list, dx_size, None, None, None)
                 })
@@ -338,7 +356,7 @@ mod tests {
         let device = null_device::thread_local();
         let pdf = WinPdfPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
-        pdf.print_at(path.as_path(), Default::default(), Some(1600))
+        pdf.print_at(path.as_path(), Default::default(), Some(1600), None)
             .unwrap();
     }
 
@@ -415,6 +433,7 @@ mod tests {
             &path,
             Default::default(),
             dpi,
+            None,
         );
         let _ = std::fs::remove_file(&path);
         result
