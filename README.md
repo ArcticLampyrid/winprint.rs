@@ -13,22 +13,11 @@ This crate interfaces with several Windows API functions, necessitating the use 
 ### Testing on Windows
 Just run `cargo test` on a Windows machine, null printer will be automatically created and used for testing. The tests cover basic printer operations like getting printer information, writing to the printer, etc.
 
-Three visual regression tests also run under the `test-utils` feature (plus
-`pdfium` for the PDF test):
-
-- `tests/visual_regression_pdfium.rs` — `PdfiumPrinter`
-- `tests/visual_regression_xps.rs` — `XpsPrinter`
-- `tests/visual_regression_image.rs` — `ImagePrinter`
-
+Also there are visual regression tests for PDF, XPS, and Image files.
 Each prints the matching origin file from
-`test_data/visual_regression/<kind>/origin.*` through a virtual Microsoft PWG
+`test_data/visual_regression/data.*` through a virtual Microsoft PWG
 Raster printer, decodes the PWG bitstream, and SSIM-compares each page
-against the corresponding `expected.tiff` rendered by a deliberately
-**different** renderer (Poppler for PDF, libgxps for XPS, ImageMagick for
-Image). That second-source property means a shared regression between
-renderer and baseline would have to coincidentally produce matching pixels
-for the test to silently pass. Set `WINPRINT_DUMP_DIR=<path>` to have failing
-tests dump the actual/expected page PNGs for inspection.
+against the corresponding `data.tiff`.
 
 Day-to-day development never needs to regenerate these fixtures — the repo
 ships them and `cargo test` consumes them as-is. If you do need to rebuild
