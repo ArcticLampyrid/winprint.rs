@@ -1,7 +1,7 @@
 //! Pseudo-random pixels survive printing: an image the renderer cannot compress, smooth or guess is
 //! compared with the raster the printer receives, pixel for pixel. Unlike a pattern, noise tells a
 //! page drawn at the job's resolution (no pixel off by more than 8) from one drawn at 96 dpi (93%
-//! of the pixels off), and shows a seam between tiles.
+//! of the pixels off).
 
 #![cfg(all(windows, feature = "test-utils"))]
 
@@ -137,19 +137,8 @@ fn noise_prints_back_pixel_for_pixel() {
             .print(&path, ticket(device))
             .unwrap();
     });
-    let mut tiles = 0;
-    let tiled = print::print_pages(|device| {
-        tiles = WinPdfPrinter::new(device.clone())
-            .print_in_tiles(&path, ticket(device), 512)
-            .unwrap();
-    });
     let _ = std::fs::remove_file(&path);
     let (whole_diff, whole_at, whole_far) = compare_counting(&whole[0], &source);
-    let (tiled_diff, tiled_at, tiled_far) = compare_counting(&tiled[0], &source);
-    println!(
-        "RESULT pixels off by more than 8: whole {whole_far}, tiled {tiled_far} of {}",
-        SIDE * SIDE
-    );
     assert_eq!(whole[0].width(), 2480, "the page is A4 at 300 dpi");
     assert_eq!(
         whole_at,
@@ -159,14 +148,8 @@ fn noise_prints_back_pixel_for_pixel() {
     // About 85 for the wrong picture, 61 when the page is drawn at 96 dpi; 0.015 measured.
     assert!(
         whole_diff < 0.5 && whole_far == 0,
-        "whole page: {whole_diff:.3}, {whole_far} pixels off"
+        "{whole_diff:.3}, {whole_far} pixels off"
     );
-    assert_eq!(tiled_at, (0, 0));
-    assert!(
-        tiled_diff < 0.5 && tiled_far == 0,
-        "tiles ({tiles}): {tiled_diff:.3}, {tiled_far} pixels off"
-    );
-    assert!(tiles > 1, "the page was not tiled");
     let (other, _) = compare(&whole[0], &noise(0xBEEF));
     assert!(other > 50.0, "another seed matched ({other:.1})");
 }

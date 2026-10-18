@@ -5,11 +5,10 @@ use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use std::path::Path;
 use thiserror::Error;
-use windows::core::{HRESULT, HSTRING};
+use windows::core::HSTRING;
 use windows::Data::Pdf::PdfDocument;
 use windows::Storage::StorageFile;
-use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_F, D2D_SIZE_F};
-use windows::Win32::Graphics::Direct2D::{ID2D1CommandList, D2D1_ANTIALIAS_MODE_ALIASED};
+use windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_F;
 use windows::Win32::System::WinRT::Pdf::PdfCreateRenderer;
 use windows::Win32::System::WinRT::Pdf::PDF_RENDER_PARAMS;
 use windows_numerics::Matrix3x2;
@@ -35,6 +34,12 @@ pub enum WinPdfPrinterError {
         scale: f32,
     },
     /// A page could not be rendered or recorded at the requested resolution.
+    ///
+    /// Measured on a GPU machine: nothing here failed for plain images and fills up to A4 at
+    /// 9600 dpi, but a blend mode other than Normal (for example `/BM /Multiply`) over a very
+    /// large area does. The print control then refuses the layer from `AddPage` with
+    /// `D2DERR_EXCEEDS_MAX_BITMAP_SIZE` (0x8899001D), and drawing the page in tiles of 8192,
+    /// 2048 or 1024 pixels did not help: it ended in `E_FAIL` after minutes.
     ///
     /// Direct3D 11 guarantees textures only up to 16384 texels a side
     /// (<https://learn.microsoft.com/windows/win32/direct3d11/overviews-direct3d-11-resources-limits>)
@@ -78,7 +83,7 @@ impl FilePrinter for WinPdfPrinter {
         path: &Path,
         options: PrintTicket,
     ) -> std::result::Result<(), WinPdfPrinterError> {
-        self.print_at(path, options, None, None).map(|_| ())
+        self.print_at(path, options, None)
     }
 }
 
@@ -86,37 +91,17 @@ impl FilePrinter for WinPdfPrinter {
 const DIP_PER_INCH: f32 = 96.0;
 
 impl WinPdfPrinter {
-    /// Print `path` always in square tiles of `side` pixels, to check that tiles print like the
-    /// whole page.
-    #[cfg(feature = "test-utils")]
-    #[doc(hidden)]
-    pub fn print_in_tiles(
-        &self,
-        path: &Path,
-        options: PrintTicket,
-        side: u32,
-    ) -> std::result::Result<usize, WinPdfPrinterError> {
-        self.print_at(path, options, None, Some(side))
-    }
-
     /// Print `path` rendering at `dpi`, else at the job's resolution (the DEVMODE of the ticket).
     ///
     /// `Windows.Data.Pdf` draws the images of a page at the destination size, 96 dpi by default
     /// whatever the images are, so a page is rendered `dpi / 96` times larger and the transform
     /// scales it back onto the page.
-    ///
-    /// A page is rendered whole. Direct2D refuses a composited layer (blending, transparency)
-    /// larger than the Direct3D texture limit with `D2DERR_EXCEEDS_MAX_BITMAP_SIZE`; only then is
-    /// the page redrawn in square tiles of 8192, 4096, ... 1024 pixels, the first size that
-    /// works. Returns the most tiles any page needed (1 = whole).
     fn print_at(
         &self,
         path: &Path,
         options: PrintTicket,
         dpi: Option<u32>,
-        tile: Option<u32>,
-    ) -> std::result::Result<usize, WinPdfPrinterError> {
-        let mut most_tiles = 1;
+    ) -> std::result::Result<(), WinPdfPrinterError> {
         let context = DxgiPrintContext::new(
             &self.printer,
             &options,
@@ -159,177 +144,47 @@ impl WinPdfPrinter {
                     height_px,
                     source,
                 };
-                let (dips_x, dips_y) = (
-                    pdf_size.Width / width_px as f32,
-                    pdf_size.Height / height_px as f32,
-                );
-                // Draw the page, in tiles of `side` pixels when given, into a new command list.
-                let draw = |side: Option<u32>| -> windows::core::Result<ID2D1CommandList> {
-                    let command_list = d2d_context.CreateCommandList()?;
-                    d2d_context.SetTarget(&command_list);
-                    d2d_context.BeginDraw();
-                    let drawn = tiles(width_px, height_px, side)
-                        .into_iter()
-                        .try_for_each(|tile| {
-                            let whole = side.is_none();
-                            // The tile is a rectangle of the page's pixel grid, drawn `scale` times the
-                            // page and scaled back onto it.
-                            let area = D2D_RECT_F {
-                                left: tile.x as f32 * dips_x,
-                                top: tile.y as f32 * dips_y,
-                                right: (tile.x + tile.width) as f32 * dips_x,
-                                bottom: (tile.y + tile.height) as f32 * dips_y,
-                            };
-                            let render = PDF_RENDER_PARAMS {
-                                SourceRect: if whole { D2D_RECT_F::default() } else { area },
-                                DestinationWidth: tile.width,
-                                DestinationHeight: tile.height,
-                                IgnoreHighContrast: true.into(),
-                                ..Default::default()
-                            };
-                            d2d_context.SetTransform(&Matrix3x2 {
-                                M11: dips_x,
-                                M22: dips_y,
-                                M31: area.left,
-                                M32: area.top,
-                                ..Matrix3x2::identity()
-                            });
-                            if !whole {
-                                // In the tile's own pixel space: the transform applies to the clip.
-                                let local = D2D_RECT_F {
-                                    left: 0.0,
-                                    top: 0.0,
-                                    right: tile.width as f32,
-                                    bottom: tile.height as f32,
-                                };
-                                d2d_context
-                                    .PushAxisAlignedClip(&local, D2D1_ANTIALIAS_MODE_ALIASED);
-                            }
-                            let rendered = pdf_renderer.RenderPageToDeviceContext(
-                                &pdf_page,
-                                d2d_context,
-                                Some(&render),
-                            );
-                            if !whole {
-                                d2d_context.PopAxisAlignedClip();
-                            }
-                            d2d_context.SetTransform(&Matrix3x2::identity());
-                            rendered
-                        });
-                    let ended = d2d_context.EndDraw(None, None);
-                    drawn?;
-                    ended?;
-                    command_list.Close()?;
-                    Ok(command_list)
+                let pdf_render_options = PDF_RENDER_PARAMS {
+                    DestinationWidth: width_px,
+                    DestinationHeight: height_px,
+                    IgnoreHighContrast: true.into(),
+                    ..Default::default()
                 };
+                let command_list = d2d_context
+                    .CreateCommandList()
+                    .map_err(WinPdfPrinterError::RenderError)?;
+                d2d_context.SetTarget(&command_list);
+                d2d_context.BeginDraw();
+                // The destination is whole pixels, so scale back by the page's own size over it:
+                // the bitmap then covers the page exactly (1 / scale would overshoot by a pixel).
+                d2d_context.SetTransform(&Matrix3x2 {
+                    M11: pdf_size.Width / width_px as f32,
+                    M22: pdf_size.Height / height_px as f32,
+                    ..Matrix3x2::identity()
+                });
+                let rendered = pdf_renderer.RenderPageToDeviceContext(
+                    &pdf_page,
+                    d2d_context,
+                    Some(&pdf_render_options),
+                );
+                d2d_context.SetTransform(&Matrix3x2::identity());
+                rendered.map_err(at_resolution)?;
+                d2d_context.EndDraw(None, None).map_err(at_resolution)?;
+                command_list
+                    .Close()
+                    .map_err(WinPdfPrinterError::RenderError)?;
+
                 let dx_size = D2D_SIZE_F {
                     width: pdf_size.Width as f32,
                     height: pdf_size.Height as f32,
                 };
-                // The print control converts the command list when the page is added, and that is
-                // where it refuses a layer it cannot rasterise in one bitmap.
-                let sides = match tile {
-                    Some(side) => vec![Some(side)],
-                    None => tile_sides(width_px, height_px),
-                };
-                let side = first_that_fits(&sides, |side| {
-                    let command_list = draw(side)?;
-                    print_control.AddPage(&command_list, dx_size, None, None, None)
-                })
-                .map_err(at_resolution)?;
-                most_tiles = most_tiles.max(tiles(width_px, height_px, side).len());
+                print_control
+                    .AddPage(&command_list, dx_size, None, None, None)
+                    .map_err(at_resolution)?;
             }
         }
         context.close_and_wait()?;
-        Ok(most_tiles)
-    }
-}
-
-/// Direct2D's refusal of a bitmap or layer larger than the device guarantees
-/// (<https://learn.microsoft.com/windows/win32/direct2d/direct2d-error-codes>).
-///
-/// Measured: the print control raises it from `AddPage` for blended content (overlapping shapes
-/// with `/BM /Multiply`) whose layer is about 1.7 GB (25000 x 16667 px) on a machine where
-/// 1.3 GB (17916 x 17916) still worked, which fits Direct3D 11's resource cap of
-/// `min(max(128 MB, 25% of VRAM), 2048 MB)`. The cost of such a layer is also steep (overlapped
-/// squares: 1000 px 1.7 s, 2000 px 12 s, 4000 px over a minute), and drawing the same page in
-/// 1024 px tiles was faster than whole (2000 px: 5 s).
-const EXCEEDS_MAX_BITMAP_SIZE: HRESULT = HRESULT(0x8899001Du32 as i32);
-
-/// The tile sides tried, in pixels, after a page failed whole. Half the 16384 texels Direct3D 11
-/// guarantees leaves room for the margins Direct2D adds to a layer.
-const TILE_SIDES: [u32; 4] = [8192, 4096, 2048, 1024];
-
-/// A rectangle of the page's pixel grid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Tile {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
-
-/// The rectangles of `side` pixels that cover a `width` x `height` page exactly, row by row; the
-/// page itself when `side` is `None`.
-fn tiles(width: u32, height: u32, side: Option<u32>) -> Vec<Tile> {
-    let side = side.unwrap_or(u32::MAX).max(1);
-    let mut out = Vec::new();
-    let mut y = 0;
-    while y < height {
-        let tile_height = side.min(height - y);
-        let mut x = 0;
-        while x < width {
-            let tile_width = side.min(width - x);
-            out.push(Tile {
-                x,
-                y,
-                width: tile_width,
-                height: tile_height,
-            });
-            x += tile_width;
-        }
-        y += tile_height;
-    }
-    out
-}
-
-/// The ways to draw a page, best first: whole, then in tiles of each [`TILE_SIDES`] smaller than
-/// the page.
-fn tile_sides(width: u32, height: u32) -> Vec<Option<u32>> {
-    std::iter::once(None)
-        .chain(
-            TILE_SIDES
-                .into_iter()
-                .filter(|side| *side < width.max(height))
-                .map(Some),
-        )
-        .collect()
-}
-
-/// Run `attempt` for each of `sides` in turn until one succeeds, moving on only after
-/// `D2DERR_EXCEEDS_MAX_BITMAP_SIZE`; any other error, and the last one, is returned. Gives the side
-/// that worked.
-fn first_that_fits(
-    sides: &[Option<u32>],
-    mut attempt: impl FnMut(Option<u32>) -> windows::core::Result<()>,
-) -> windows::core::Result<Option<u32>> {
-    let mut sides = sides.iter().copied();
-    loop {
-        let side = sides.next().unwrap_or(None);
-        #[cfg(test)]
-        let started = std::time::Instant::now();
-        let outcome = attempt(side);
-        #[cfg(test)]
-        eprintln!(
-            "[tiles] {side:?}: {:?} after {:.1?}",
-            outcome.as_ref().err().map(|e| e.code()),
-            started.elapsed()
-        );
-        match outcome {
-            Ok(()) => return Ok(side),
-            Err(e) if e.code() == EXCEEDS_MAX_BITMAP_SIZE && sides.len() > 0 => {}
-            Err(e) => return Err(e),
-        }
+        Ok(())
     }
 }
 
@@ -374,7 +229,7 @@ mod tests {
         let device = null_device::thread_local();
         let pdf = WinPdfPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
-        pdf.print_at(path.as_path(), Default::default(), Some(1600), None)
+        pdf.print_at(path.as_path(), Default::default(), Some(1600))
             .unwrap();
     }
 
@@ -439,11 +294,7 @@ mod tests {
     }
 
     /// Print `bytes` to the null device at `dpi`, from a file that is removed afterwards.
-    fn print_bytes(
-        name: &str,
-        bytes: &[u8],
-        dpi: Option<u32>,
-    ) -> Result<usize, WinPdfPrinterError> {
+    fn print_bytes(name: &str, bytes: &[u8], dpi: Option<u32>) -> Result<(), WinPdfPrinterError> {
         let path =
             std::env::temp_dir().join(format!("winprint-limits-{}-{name}.pdf", std::process::id()));
         std::fs::write(&path, bytes).unwrap();
@@ -451,7 +302,6 @@ mod tests {
             &path,
             Default::default(),
             dpi,
-            None,
         );
         let _ = std::fs::remove_file(&path);
         result
@@ -519,20 +369,11 @@ mod tests {
         // Whole pages: nothing here needs a page-sized bitmap.
         // A4 with a 300 dpi image: 79371 x 112252 px at 9600 dpi.
         let a4 = pdf((595, 842), Some((600, 600, 144, 144)), "", "");
-        assert_eq!(
-            print_bytes("a4", &a4, Some(9600)).expect("A4 at 9600 dpi"),
-            1
-        );
+        print_bytes("a4", &a4, Some(9600)).expect("A4 at 9600 dpi");
         // An image more than 65535 px wide, drawn 550 pt wide.
         let wide = pdf((595, 842), Some((70_000, 40, 550, 20)), "", "");
-        assert_eq!(
-            print_bytes("wide-default", &wide, None).expect("a 70000 px wide image"),
-            1
-        );
-        assert_eq!(
-            print_bytes("wide-1600", &wide, Some(1600)).expect("a wide image at 1600 dpi"),
-            1
-        );
+        print_bytes("wide-default", &wide, None).expect("a 70000 px wide image");
+        print_bytes("wide-1600", &wide, Some(1600)).expect("a wide image at 1600 dpi");
     }
 
     const BLEND: &str = "/ExtGState << /G1 << /ca 0.5 /BM /Multiply >> >>";
@@ -547,233 +388,7 @@ mod tests {
             BLEND,
             "1 0 0 rg 20 20 240 240 re f /G1 gs 0 0 1 rg 140 140 240 240 re f",
         );
-        assert_eq!(print_bytes("blend-fits", &blended, Some(300)).unwrap(), 1);
-    }
-
-    /// The CPU time this process has used so far.
-    fn cpu_time() -> std::time::Duration {
-        use windows::Win32::Foundation::FILETIME;
-        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
-        let (mut created, mut exited, mut kernel, mut user) = (
-            FILETIME::default(),
-            FILETIME::default(),
-            FILETIME::default(),
-            FILETIME::default(),
-        );
-        unsafe {
-            GetProcessTimes(
-                GetCurrentProcess(),
-                &mut created,
-                &mut exited,
-                &mut kernel,
-                &mut user,
-            )
-        }
-        .unwrap();
-        let ticks = |f: FILETIME| (u64::from(f.dwHighDateTime) << 32) | u64::from(f.dwLowDateTime);
-        std::time::Duration::from_nanos((ticks(kernel) + ticks(user)) * 100)
-    }
-
-    /// Run `work` on a thread of its own, saying every five seconds (`WINPRINT_BLEND_BEAT_SECS`) that it is still going and
-    /// how much CPU the process has used since it began, so a long run shows whether it moves.
-    /// Past `deadline` the process is aborted with that said: a call that never returns cannot be
-    /// cancelled.
-    fn with_heartbeat<R: Send>(
-        label: &str,
-        deadline: std::time::Duration,
-        work: impl FnOnce() -> R + Send,
-    ) -> (R, std::time::Duration) {
-        let beat = std::time::Duration::from_secs(
-            std::env::var("WINPRINT_BLEND_BEAT_SECS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(5),
-        );
-        let started = std::time::Instant::now();
-        let cpu_started = cpu_time();
-        std::thread::scope(|scope| {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            scope.spawn(move || {
-                let _ = sender.send(work());
-            });
-            loop {
-                match receiver.recv_timeout(beat) {
-                    Ok(result) => {
-                        let elapsed = started.elapsed();
-                        eprintln!(
-                            "[{label}] done in {elapsed:.1?} ({:.1?} CPU)",
-                            cpu_time() - cpu_started
-                        );
-                        return (result, elapsed);
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        // The worker panicked; the scope reports it once it is joined.
-                        panic!("[{label}] failed after {:.1?}", started.elapsed())
-                    }
-                    Err(_) if started.elapsed() > deadline => {
-                        eprintln!("[{label}] no result after {deadline:?}: giving up");
-                        std::process::abort();
-                    }
-                    Err(_) => eprintln!(
-                        "[{label}] running for {:.0?}, {:.1?} CPU",
-                        started.elapsed(),
-                        cpu_time() - cpu_started
-                    ),
-                }
-            }
-        })
-    }
-
-    /// Overlapping blended rectangles of 25000 x 16667 px (6000 x 4000 pt at 300 dpi) make a layer
-    /// of about 1.7 GB: Direct2D refuses it whole (`D2DERR_EXCEEDS_MAX_BITMAP_SIZE`, in 2 ms) and
-    /// the page is drawn in tiles. Whether a layer fits depends on the GPU, and compositing that
-    /// much takes a long time, so this runs on request.
-    ///
-    /// It first times two small overlaps (1500 and 3000 px squares) and says what the growth
-    /// predicts for the big one, then prints the big page with a heartbeat line every five
-    /// seconds, giving up after `WINPRINT_BLEND_SECS` (default 900).
-    #[test]
-    #[ignore = "slow, and depends on the GPU's memory"]
-    fn a_blended_layer_that_does_not_fit_is_drawn_in_tiles() {
-        let deadline = std::time::Duration::from_secs(
-            std::env::var("WINPRINT_BLEND_SECS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(900),
-        );
-        let overlap = |px: u32| {
-            let pt = px * 72 / 300;
-            pdf(
-                (14_400, 14_400),
-                None,
-                BLEND,
-                &format!(
-                    "1 0 0 rg 20 20 {pt} {pt} re f /G1 gs 0 0 1 rg {} {} {pt} {pt} re f",
-                    20 + pt / 2,
-                    20 + pt / 2
-                ),
-            )
-        };
-        let mut seconds = Vec::new();
-        for px in [1500u32, 3000] {
-            let bytes = overlap(px);
-            let (tiles, elapsed) = with_heartbeat(&format!("{px} px overlap"), deadline, || {
-                print_bytes(&format!("blend-{px}"), &bytes, Some(300)).unwrap()
-            });
-            assert_eq!(tiles, 1);
-            seconds.push(elapsed.as_secs_f64());
-        }
-        // Time grows as side^k; the layer here is 25000 px a side, drawn in tiles of at most 8192.
-        let k = (seconds[1] / seconds[0]).log2();
-        let tile_estimate = seconds[1] * (8192.0f64 / 3000.0).powf(k);
-        eprintln!(
-            "growth ~ side^{k:.1}: a whole 25000 px layer would take ~{:.0} s, each 8192 px tile ~{tile_estimate:.0} s",
-            seconds[1] * (25000.0f64 / 3000.0).powf(k)
-        );
-        let blended = pdf(
-            (14_400, 14_400),
-            None,
-            BLEND,
-            "1 0 0 rg 200 200 6000 4000 re f /G1 gs 0 0 1 rg 3000 2000 6000 4000 re f",
-        );
-        let (tiles, _) = with_heartbeat("large blend", deadline, || {
-            print_bytes("blend-large", &blended, Some(300)).unwrap()
-        });
-        assert!(tiles > 1);
-    }
-
-    fn exceeds() -> windows::core::Error {
-        windows::core::Error::from_hresult(super::EXCEEDS_MAX_BITMAP_SIZE)
-    }
-
-    #[test]
-    fn a_page_is_tiled_only_after_it_exceeds_the_bitmap_size() {
-        use super::{first_that_fits, tile_sides};
-        // 20000 px: whole, then 8192, 4096, 2048, 1024.
-        let sides = tile_sides(20_000, 20_000);
-        assert_eq!(
-            sides,
-            [None, Some(8192), Some(4096), Some(2048), Some(1024)]
-        );
-        assert_eq!(
-            tile_sides(3000, 100),
-            [None, Some(2048), Some(1024)],
-            "a tile as big as the page is pointless"
-        );
-        assert_eq!(tile_sides(500, 500), [None]);
-
-        let mut tried = Vec::new();
-        let fitted = first_that_fits(&sides, |side| {
-            tried.push(side);
-            if side.is_none_or(|s| s > 4096) {
-                Err(exceeds())
-            } else {
-                Ok(())
-            }
-        });
-        assert_eq!(fitted.unwrap(), Some(4096));
-        assert_eq!(tried, [None, Some(8192), Some(4096)]);
-
-        // Any other error is final, at once.
-        let mut tried = 0;
-        let other = first_that_fits(&sides, |_| {
-            tried += 1;
-            Err(windows::core::Error::from_hresult(
-                windows::Win32::Foundation::E_INVALIDARG,
-            ))
-        });
-        assert_eq!(
-            (tried, other.unwrap_err().code()),
-            (1, windows::Win32::Foundation::E_INVALIDARG)
-        );
-
-        // When even the smallest tile exceeds it, that error comes back.
-        let mut tried = 0;
-        let none = first_that_fits(&sides, |_| {
-            tried += 1;
-            Err(exceeds())
-        });
-        assert_eq!(
-            (tried, none.unwrap_err().code()),
-            (5, super::EXCEEDS_MAX_BITMAP_SIZE)
-        );
-    }
-
-    #[test]
-    fn tiles_cover_the_page_exactly() {
-        use super::{tiles, Tile};
-        assert_eq!(
-            tiles(100, 50, None),
-            [Tile {
-                x: 0,
-                y: 0,
-                width: 100,
-                height: 50
-            }]
-        );
-        for (width, height, side) in [
-            (100, 50, 32),
-            (8192, 8192, 8192),
-            (8193, 1, 8192),
-            (60_000, 60_000, 8192),
-            (1, 1, 1024),
-        ] {
-            let all = tiles(width, height, Some(side));
-            let area: u64 = all
-                .iter()
-                .map(|t| u64::from(t.width) * u64::from(t.height))
-                .sum();
-            assert_eq!(
-                area,
-                u64::from(width) * u64::from(height),
-                "{width}x{height}/{side}"
-            );
-            assert!(all.iter().all(|t| t.x + t.width <= width
-                && t.y + t.height <= height
-                && t.width <= side
-                && t.height <= side));
-        }
-        assert_eq!(tiles(60_000, 60_000, Some(8192)).len(), 8 * 8);
+        print_bytes("blend-fits", &blended, Some(300)).unwrap();
     }
 
     #[test]
