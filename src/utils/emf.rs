@@ -15,12 +15,13 @@ use windows::{
         Graphics::{
             Gdi::{
                 CloseEnhMetaFile, CreateEnhMetaFileW, DeleteEnhMetaFile, EnumEnhMetaFile,
-                GetEnhMetaFileHeader, GetWorldTransform, ModifyWorldTransform,
+                GetDeviceCaps, GetEnhMetaFileHeader, GetWorldTransform, ModifyWorldTransform,
                 PlayEnhMetaFileRecord, SetWorldTransform, StretchDIBits, BITMAPINFO,
                 BITMAPINFOHEADER, BI_JPEG, BI_PNG, BI_RGB, DIB_USAGE, EMRSTRETCHDIBITS,
                 EMR_MODIFYWORLDTRANSFORM, EMR_SETLAYOUT, EMR_SETWORLDTRANSFORM, EMR_STRETCHDIBITS,
-                ENHMETAHEADER, ENHMETARECORD, HANDLETABLE, HDC, HENHMETAFILE, MWT_IDENTITY,
-                MWT_LEFTMULTIPLY, MWT_RIGHTMULTIPLY, ROP_CODE, XFORM,
+                ENHMETAHEADER, ENHMETARECORD, HANDLETABLE, HDC, HENHMETAFILE, HORZRES, HORZSIZE,
+                MWT_IDENTITY, MWT_LEFTMULTIPLY, MWT_RIGHTMULTIPLY, ROP_CODE, VERTRES, VERTSIZE,
+                XFORM,
             },
             Imaging::{
                 CLSID_WICImagingFactory2, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone,
@@ -46,19 +47,31 @@ pub struct Emf {
 
 impl Emf {
     /// Creates a new EMF by drawing on a metafile DC.
-    /// All units are in .01-millimeter units.
+    /// `width` and `height` are in reference-device pixels.
     pub unsafe fn new(
         hdc: HDC,
         width: i32,
         height: i32,
         draw: impl FnOnce(HDC) -> bool,
     ) -> Result<Self, EmfCreateFailedError> {
-        // in .01-millimeter units
+        // EMF playback maps the frame back to pixels using szlDevice and
+        // szlMillimeters (HORZRES/HORZSIZE), not LOGPIXELSX/Y. The rounded
+        // millimeter device size need not agree with its nominal DPI.
+        // Use that same mapping here, otherwise playback subtly stretches
+        // the recorded pixels even when the destination has the same size.
         let frame = RECT {
             left: 0,
             top: 0,
-            right: width,
-            bottom: height,
+            right: frame_extent(
+                width,
+                GetDeviceCaps(Some(hdc), HORZRES),
+                GetDeviceCaps(Some(hdc), HORZSIZE),
+            )?,
+            bottom: frame_extent(
+                height,
+                GetDeviceCaps(Some(hdc), VERTRES),
+                GetDeviceCaps(Some(hdc), VERTSIZE),
+            )?,
         };
 
         let emf_hdc = CreateEnhMetaFileW(
@@ -140,6 +153,22 @@ impl Emf {
             false => 0,
         }
     }
+}
+
+/// Convert pixels to .01-mm frame units using the EMF reference-device metrics.
+fn frame_extent(
+    pixels: i32,
+    device_pixels: i32,
+    device_mm: i32,
+) -> Result<i32, EmfCreateFailedError> {
+    if pixels <= 0 || device_pixels <= 0 || device_mm <= 0 {
+        return Err(EmfCreateFailedError);
+    }
+    let extent = (pixels as f64 * device_mm as f64 * 100.0 / device_pixels as f64).round();
+    if extent < 1.0 || extent > i32::MAX as f64 {
+        return Err(EmfCreateFailedError);
+    }
+    Ok(extent as i32)
 }
 
 impl Drop for Emf {
@@ -356,5 +385,43 @@ impl DecodedBitmap {
             },
             pixels,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frame_extent;
+
+    #[test]
+    fn emf_frame_round_trips_reference_device_pixels() {
+        // The PWG driver's printable area at nominal 300 dpi: its rounded
+        // millimeter dimensions do not describe exactly 300 pixels per inch.
+        for (pixels, device_pixels, device_mm, expected_frame) in
+            [(2480, 2180, 185, 21046), (3507, 3208, 272, 29735)]
+        {
+            let frame = frame_extent(pixels, device_pixels, device_mm).unwrap();
+            assert_eq!(frame, expected_frame);
+            let replayed_pixels = frame as f64 * device_pixels as f64 / (device_mm as f64 * 100.0);
+            assert!((replayed_pixels - pixels as f64).abs() < 0.1);
+
+            // The old nominal-DPI conversion causes a multi-pixel drift.
+            let nominal_frame = (pixels as f64 * 2540.0 / 300.0).round();
+            let replayed_pixels = nominal_frame * device_pixels as f64 / (device_mm as f64 * 100.0);
+            assert!((replayed_pixels - pixels as f64).abs() > 4.0);
+        }
+    }
+
+    #[test]
+    fn emf_frame_rejects_invalid_or_overflowing_dimensions() {
+        for (pixels, device_pixels, device_mm) in [
+            (0, 2180, 185),
+            (-1, 2180, 185),
+            (2480, 0, 185),
+            (2480, 2180, -1),
+            (1, i32::MAX, 1),
+            (i32::MAX, 1, i32::MAX),
+        ] {
+            assert!(frame_extent(pixels, device_pixels, device_mm).is_err());
+        }
     }
 }

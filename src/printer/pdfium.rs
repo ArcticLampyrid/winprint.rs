@@ -177,25 +177,20 @@ impl FilePrinter for PdfiumPrinter {
                 let page_std_height = FPDF_GetPageHeight(page);
                 let page_width = (page_std_width * dpi_x as f64 / 72.0).round() as i32;
                 let page_height = (page_std_height * dpi_y as f64 / 72.0).round() as i32;
-                let emf = Emf::new(
-                    hdc_print,
-                    (page_std_width * 2540.0 / 72.0).round() as i32,
-                    (page_std_height * 2540.0 / 72.0).round() as i32,
-                    |hdc_emf| {
-                        SetGraphicsMode(hdc_emf, GM_ADVANCED);
-                        FPDF_RenderPage(
-                            hdc_emf,
-                            page,
-                            0,
-                            0,
-                            page_width,
-                            page_height,
-                            0,
-                            FPDF_PRINTING,
-                        );
-                        true
-                    },
-                )
+                let emf = Emf::new(hdc_print, page_width, page_height, |hdc_emf| {
+                    SetGraphicsMode(hdc_emf, GM_ADVANCED);
+                    FPDF_RenderPage(
+                        hdc_emf,
+                        page,
+                        0,
+                        0,
+                        page_width,
+                        page_height,
+                        0,
+                        FPDF_PRINTING,
+                    );
+                    true
+                })
                 .map_err(|_| PdfiumPrinterError::EmfCreateFailed(page_index))?;
 
                 let paper_width = get_attr(PHYSICALWIDTH);
