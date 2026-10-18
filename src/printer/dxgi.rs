@@ -177,6 +177,10 @@ impl DxgiPrintContext {
                     &print_ticket_stream,
                 )
                 .map_err(DxgiPrintContextError::FailedToStartJob)?;
+            // The job exists from here on: cancel it on any early return (or panic) below.
+            let job_guard = scopeguard::guard(document_target.clone(), |target| {
+                let _ = target.Cancel();
+            });
             let print_control_options = D2D1_PRINT_CONTROL_PROPERTIES {
                 rasterDPI: max(dpi.0, dpi.1) as f32,
                 ..Default::default()
@@ -201,6 +205,8 @@ impl DxgiPrintContext {
                 .Advise(&completion_source)
                 .map_err(DxgiPrintContextError::FailedToCreateEvent)?;
 
+            // The finished context owns the job from here on.
+            let _ = scopeguard::ScopeGuard::into_inner(job_guard);
             Ok(Self {
                 d3d_device,
                 d3d_context,
