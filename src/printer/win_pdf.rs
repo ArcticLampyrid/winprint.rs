@@ -316,7 +316,16 @@ fn first_that_fits(
     let mut sides = sides.iter().copied();
     loop {
         let side = sides.next().unwrap_or(None);
-        match attempt(side) {
+        #[cfg(test)]
+        let started = std::time::Instant::now();
+        let outcome = attempt(side);
+        #[cfg(test)]
+        eprintln!(
+            "[tiles] {side:?}: {:?} after {:.1?}",
+            outcome.as_ref().err().map(|e| e.code()),
+            started.elapsed()
+        );
+        match outcome {
             Ok(()) => return Ok(side),
             Err(e) if e.code() == EXCEEDS_MAX_BITMAP_SIZE && sides.len() > 0 => {}
             Err(e) => return Err(e),
@@ -596,6 +605,10 @@ mod tests {
                             cpu_time() - cpu_started
                         );
                         return (result, elapsed);
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        // The worker panicked; the scope reports it once it is joined.
+                        panic!("[{label}] failed after {:.1?}", started.elapsed())
                     }
                     Err(_) if started.elapsed() > deadline => {
                         eprintln!("[{label}] no result after {deadline:?}: giving up");
