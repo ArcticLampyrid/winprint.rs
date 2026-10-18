@@ -80,8 +80,9 @@ pub struct DxgiPrintContext {
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
     pub completion_waiter: PrintCompletionWaiter,
-    /// The resolution of the job in dots per inch: the ticket's DEVMODE, else 300.
-    pub dpi: u32,
+    /// The resolution of the job in dots per inch, from the ticket's DEVMODE (else 300). The
+    /// DEVMODE's field also holds the negative `DMRES_*` presets.
+    pub raster_dpi: i16,
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
 }
@@ -99,7 +100,7 @@ impl DxgiPrintContext {
             let dev_mode = options
                 .to_dev_mode(device)
                 .map_err(DxgiPrintContextError::PrintTicketError)?;
-            let dpi = {
+            let raster_dpi = {
                 let dev_mode = &*(dev_mode.as_ptr() as *const DEVMODEW);
                 let dpi_x = if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_PRINTQUALITY)
                     .0
@@ -115,17 +116,12 @@ impl DxgiPrintContext {
                     } else {
                         None
                     };
-                let dpi = match (dpi_x, dpi_y) {
+                match (dpi_x, dpi_y) {
                     (Some(x), Some(y)) => max(x, y),
                     (Some(x), None) => x,
                     (None, Some(y)) => y,
                     (None, None) => DEFAULT_DPI,
-                };
-                // `dmPrintQuality` also holds the negative `DMRES_*` presets.
-                u32::try_from(dpi)
-                    .ok()
-                    .filter(|dpi| *dpi > 0)
-                    .unwrap_or(DEFAULT_DPI as u32)
+                }
             };
             let mut d3d_device: Option<ID3D11Device> = None;
             let mut d3d_context: Option<ID3D11DeviceContext> = None;
@@ -187,7 +183,7 @@ impl DxgiPrintContext {
                 let _ = target.Cancel();
             });
             let print_control_options = D2D1_PRINT_CONTROL_PROPERTIES {
-                rasterDPI: dpi as f32,
+                rasterDPI: raster_dpi as f32,
                 ..Default::default()
             };
             let print_control = d2d_device
@@ -224,7 +220,7 @@ impl DxgiPrintContext {
                 document_target,
                 print_control,
                 completion_waiter,
-                dpi,
+                raster_dpi,
                 _com_initializer,
             })
         }

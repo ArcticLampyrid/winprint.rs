@@ -125,7 +125,7 @@ impl WinPdfPrinter {
         let dxgi_device = &context.dxgi_device;
         let print_control = &context.print_control;
         let d2d_context = &context.d2d_context;
-        let scale = dpi.unwrap_or(context.dpi) as f32 / DIP_PER_INCH;
+        let scale = dpi.unwrap_or_else(|| job_dpi(context.raster_dpi)) as f32 / DIP_PER_INCH;
         unsafe {
             let absolute_path =
                 std::path::absolute(path).map_err(WinPdfPrinterError::InvalidPath)?;
@@ -154,7 +154,7 @@ impl WinPdfPrinter {
                     scaled(pdf_size.Height, scale)?,
                 );
                 let at_resolution = |source| WinPdfPrinterError::RenderAtResolution {
-                    dpi: dpi.unwrap_or(context.dpi),
+                    dpi: dpi.unwrap_or_else(|| job_dpi(context.raster_dpi)),
                     width_px,
                     height_px,
                     source,
@@ -322,6 +322,15 @@ fn first_that_fits(
             Err(e) => return Err(e),
         }
     }
+}
+
+/// The resolution of the job: the DEVMODE's, unless it holds one of the negative `DMRES_*` presets
+/// (draft, low, medium, high), which are not a number of dots per inch; then 300.
+fn job_dpi(raster_dpi: i16) -> u32 {
+    u32::try_from(raster_dpi)
+        .ok()
+        .filter(|dpi| *dpi > 0)
+        .unwrap_or(300)
 }
 
 /// A page side in pixels at `scale` times its size in DIPs.
@@ -746,6 +755,14 @@ mod tests {
                 && t.height <= side));
         }
         assert_eq!(tiles(60_000, 60_000, Some(8192)).len(), 8 * 8);
+    }
+
+    #[test]
+    fn the_devmode_presets_are_not_a_resolution() {
+        use super::job_dpi;
+        assert_eq!((job_dpi(600), job_dpi(1200), job_dpi(75)), (600, 1200, 75));
+        // DMRES_DRAFT, LOW, MEDIUM, HIGH and a zero field
+        assert_eq!([-1, -2, -3, -4, 0].map(job_dpi), [300; 5]);
     }
 
     #[test]
