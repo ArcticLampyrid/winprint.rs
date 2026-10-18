@@ -565,7 +565,7 @@ mod tests {
         std::time::Duration::from_nanos((ticks(kernel) + ticks(user)) * 100)
     }
 
-    /// Run `work` on a thread of its own, saying every five seconds that it is still going and
+    /// Run `work` on a thread of its own, saying every five seconds (`WINPRINT_BLEND_BEAT_SECS`) that it is still going and
     /// how much CPU the process has used since it began, so a long run shows whether it moves.
     /// Past `deadline` the process is aborted with that said: a call that never returns cannot be
     /// cancelled.
@@ -574,6 +574,12 @@ mod tests {
         deadline: std::time::Duration,
         work: impl FnOnce() -> R + Send,
     ) -> (R, std::time::Duration) {
+        let beat = std::time::Duration::from_secs(
+            std::env::var("WINPRINT_BLEND_BEAT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(5),
+        );
         let started = std::time::Instant::now();
         let cpu_started = cpu_time();
         std::thread::scope(|scope| {
@@ -582,7 +588,7 @@ mod tests {
                 let _ = sender.send(work());
             });
             loop {
-                match receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+                match receiver.recv_timeout(beat) {
                     Ok(result) => {
                         let elapsed = started.elapsed();
                         eprintln!(
