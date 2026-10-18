@@ -144,7 +144,10 @@ impl FilePrinter for WinPdfPrinter {
                     .map_err(WinPdfPrinterError::RenderError)?;
                 d2d_context.SetTarget(&command_list);
                 d2d_context.BeginDraw();
-                d2d_context.SetTransform(&Matrix3x2::scale(scale.0.recip(), scale.1.recip()));
+                d2d_context.SetTransform(&Matrix3x2::scale(
+                    pdf_size.Width / pdf_render_options.DestinationWidth as f32,
+                    pdf_size.Height / pdf_render_options.DestinationHeight as f32,
+                ));
                 let rendered = pdf_renderer.RenderPageToDeviceContext(
                     &pdf_page,
                     d2d_context,
