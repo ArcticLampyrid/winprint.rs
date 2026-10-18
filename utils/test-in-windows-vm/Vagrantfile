@@ -1,12 +1,15 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = ENV.fetch("VAGRANT_BOX", "gusztavvargadr/windows-11")
+  config.vm.box = "gusztavvargadr/windows-11"
   config.vm.box_check_update = false
   config.vm.communicator = "winrm"
   config.vm.guest = :windows
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   config.vm.provider "libvirt" do |libvirt|
-    libvirt.driver = ENV.fetch("LIBVIRT_DRIVER", "kvm")
+    libvirt.driver = "kvm"
+    libvirt.management_network_name = "winprint-libvirt"
+    libvirt.management_network_address = "100.117.60.48/28"
+    libvirt.management_network_keep = true
     libvirt.memory = ENV.fetch("VM_MEMORY", "16384").to_i
     libvirt.cpus = ENV.fetch("VM_CPUS", "8").to_i
     libvirt.cputopology :sockets => 1, :cores => ENV.fetch("VM_CPUS", "8").to_i, :threads => 1
@@ -30,7 +33,7 @@ Vagrant.configure("2") do |config|
     Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 
     Import-Module "$env:ChocolateyInstall\\helpers\\chocolateyProfile.psm1"
-    
+
     # Enable too long paths
     New-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
 

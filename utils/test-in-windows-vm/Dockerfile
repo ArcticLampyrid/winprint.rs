@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         base-devel \
         sudo \
         rubygems \
+        ruby-erb \
         libxslt \
         ruby \
         go
