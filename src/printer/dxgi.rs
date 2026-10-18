@@ -64,7 +64,7 @@ pub enum DxgiPrintContextError {
     FailedToClosePrintControl(#[source] windows::core::Error),
 }
 
-const DEFAULT_DPI: i16 = 300;
+const DEFAULT_DPI: u32 = 300;
 
 /// Represents a print context during printing via DXGI.
 #[allow(missing_docs)]
@@ -80,6 +80,7 @@ pub struct DxgiPrintContext {
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
     pub completion_waiter: PrintCompletionWaiter,
+    pub dpi: (u32, u32),
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
 }
@@ -97,27 +98,27 @@ impl DxgiPrintContext {
             let dev_mode = options
                 .to_dev_mode(device)
                 .map_err(DxgiPrintContextError::PrintTicketError)?;
-            let raster_dpi = {
+            let dpi = {
                 let dev_mode = &*(dev_mode.as_ptr() as *const DEVMODEW);
                 let dpi_x = if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_PRINTQUALITY)
                     .0
                     != 0
                 {
-                    Some(dev_mode.Anonymous1.Anonymous1.dmPrintQuality)
+                    Some(dev_mode.Anonymous1.Anonymous1.dmPrintQuality).filter(|x| *x > 0)
                 } else {
                     None
                 };
                 let dpi_y =
                     if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_YRESOLUTION).0 != 0 {
-                        Some(dev_mode.dmYResolution)
+                        Some(dev_mode.dmYResolution).filter(|y| *y > 0)
                     } else {
                         None
                     };
                 match (dpi_x, dpi_y) {
-                    (Some(x), Some(y)) => max(x, y),
-                    (Some(x), None) => x,
-                    (None, Some(y)) => y,
-                    (None, None) => DEFAULT_DPI,
+                    (Some(x), Some(y)) => (x as u32, y as u32),
+                    (Some(x), None) => (x as u32, x as u32),
+                    (None, Some(y)) => (y as u32, y as u32),
+                    (None, None) => (DEFAULT_DPI, DEFAULT_DPI),
                 }
             };
             let mut d3d_device: Option<ID3D11Device> = None;
@@ -157,6 +158,7 @@ impl DxgiPrintContext {
             let d2d_context = d2d_device
                 .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)
                 .map_err(DxgiPrintContextError::InitializeDirectX)?;
+            d2d_context.SetDpi(dpi.0 as f32, dpi.1 as f32);
 
             let wic_factory: IWICImagingFactory2 =
                 CoCreateInstance(&CLSID_WICImagingFactory2, None, CLSCTX_ALL)
@@ -176,7 +178,7 @@ impl DxgiPrintContext {
                 )
                 .map_err(DxgiPrintContextError::FailedToStartJob)?;
             let print_control_options = D2D1_PRINT_CONTROL_PROPERTIES {
-                rasterDPI: raster_dpi as f32,
+                rasterDPI: max(dpi.0, dpi.1) as f32,
                 ..Default::default()
             };
             let print_control = d2d_device
@@ -211,6 +213,7 @@ impl DxgiPrintContext {
                 document_target,
                 print_control,
                 completion_waiter,
+                dpi,
                 _com_initializer,
             })
         }
