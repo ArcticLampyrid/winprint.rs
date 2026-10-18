@@ -10,8 +10,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from PIL import Image
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 
@@ -23,12 +25,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 VR_DIR = REPO_ROOT / "test_data" / "visual_regression"
 
-PAGE_SIZE = A4
-PAGE_W, PAGE_H = PAGE_SIZE
-
 # Baseline rendering DPI.
 BASELINE_DPI = 300
 TIFF_DOWN_SCALE_FACTOR = 4
+
+# Round A4 inward to whole baseline pixels (2480 x 3507). Fractional page
+# dimensions make renderers round/scale the page differently, shifting the
+# phase of the two-pixel patterns even when their detail is preserved.
+PAGE_SIZE = tuple(math.floor(side * BASELINE_DPI / 72) * 72 / BASELINE_DPI for side in A4)
+PAGE_W, PAGE_H = PAGE_SIZE
 
 # Pin reportlab / Ghostscript output timestamps for byte-stable output.
 os.environ.setdefault("SOURCE_DATE_EPOCH", "1700000000")
@@ -316,6 +321,49 @@ def _page_gradient(c: canvas.Canvas) -> None:
     _draw_footer(c, 4)
 
 
+def _page_raster_detail(c: canvas.Canvas) -> None:
+    """Page 5: raster detail that is lost when PDF images render at 96 dpi."""
+    _draw_page_header(c, 5, "Raster Detail (300 dpi)")
+
+    # Embed images, not vector strokes: Windows.Data.Pdf can preserve vectors
+    # while downsampling images to its default 96 dpi. Two- and three-pixel
+    # bands at 300 dpi become subpixel detail at 96 dpi.
+    #
+    # Fill the page body with a two-by-two grid, leaving room for the header,
+    # labels, and footer. Derive pixel dimensions from the available space so
+    # enlarging the blocks preserves their 300-dpi detail rather than stretching it.
+    margin_x = 36
+    gap_x = 18
+    gap_y = 36
+    top_y = PAGE_H - 108
+    bottom_y = 54
+    width_px = int((PAGE_W - 2 * margin_x - gap_x) / 2 * BASELINE_DPI / 72)
+    height_px = int((top_y - bottom_y - gap_y) / 2 * BASELINE_DPI / 72)
+    width_pt = width_px * 72 / BASELINE_DPI
+    height_pt = height_px * 72 / BASELINE_DPI
+    patterns = (
+        ("Vertical, 2 px", lambda x, y: x // 2),
+        ("Horizontal, 2 px", lambda x, y: y // 2),
+        ("Checkerboard, 3 px", lambda x, y: x // 3 + y // 3),
+        ("Diagonal, 3 px", lambda x, y: (x + y) // 3),
+    )
+    for i, (label, band) in enumerate(patterns):
+        pixels = bytes(
+            255 * (band(x, y) % 2)
+            for y in range(height_px)
+            for x in range(width_px)
+        )
+        img = Image.frombytes("L", (width_px, height_px), pixels)
+        x = margin_x + (i % 2) * (width_pt + gap_x)
+        top = top_y - (i // 2) * (height_pt + gap_y)
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 10)
+        c.drawString(x, top + 12, label)
+        c.drawImage(ImageReader(img), x, top - height_pt, width_pt, height_pt)
+
+    _draw_footer(c, 5)
+
+
 def generate_pdf(out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     c = canvas.Canvas(
@@ -334,6 +382,8 @@ def generate_pdf(out_path: Path) -> None:
     _page_shapes(c)
     c.showPage()
     _page_gradient(c)
+    c.showPage()
+    _page_raster_detail(c)
     c.showPage()
 
     c.save()
@@ -387,6 +437,8 @@ def convert_pdf_to_xps(pdf_path: Path, out_path: Path) -> None:
             "-dSAFER",
             "-dQUIET",
             "-sDEVICE=xpswrite",
+            # Avoid xpswrite's default 96-dpi layout shifting the fine patterns.
+            f"-r{BASELINE_DPI}",
             f"-sOutputFile={out_path}",
             str(pdf_path),
         ]

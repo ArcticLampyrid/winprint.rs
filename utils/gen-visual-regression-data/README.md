@@ -30,6 +30,28 @@ test_data/visual_regression/
 └── data.xps
 ```
 
+All printer backends share these five-page fixtures. The last page embeds
+300-DPI raster patterns (vertical/horizontal stripes, checkerboard, and
+diagonal bands) in a two-by-two grid covering most of the page. The blocks
+are generated at their final physical size to preserve the 300-DPI detail.
+Unlike vector strokes, these exercise image downsampling in
+`Windows.Data.Pdf`: rendering at its default 96 DPI loses the fine detail.
+WinPdf uses a tighter per-page visual similarity threshold to catch that loss,
+while the other backends retain their tolerance for registration differences.
+No separate contrast test or backend-specific baseline is needed.
+`tests/visual_regression_comparison.rs` checks the comparison itself without
+printing: unchanged TIFF pages pass, while downsampling from 300 to 96 DPI
+must fail on the raster-detail page using the same threshold as WinPdf.
+
+### Pixel alignment
+
+The page is A4 rounded inward to whole 300-DPI pixels (2480 × 3507), less
+than 0.1 mm smaller on either axis. This avoids renderer-specific rounding
+of fractional page dimensions changing the phase of the fine patterns.
+Ghostscript's XPS conversion also explicitly uses 300 DPI: its default
+96-DPI layout grid introduces a visible phase offset when printed at 300 DPI.
+Neither the pattern frequency nor the comparison thresholds are reduced.
+
 ## Determinism
 
 Byte-identical re-runs are non-negotiable — the fixtures are committed and
@@ -53,13 +75,14 @@ The script is pure Python 3, but it shells out to a handful of command-line
 tools. On Arch Linux:
 
 ```bash
-sudo pacman -S python python-reportlab poppler libtiff ghostscript
+sudo pacman -S python python-reportlab python-pillow poppler libtiff ghostscript
 ```
 
 | Tool        | Package (Arch)     | Role                    |
 | ----------- | ------------------ | ----------------------- |
 | `python3`   | `python`           | Host language           |
 | `reportlab` | `python-reportlab` | Draws `pdf/origin.pdf`  |
+| `PIL`       | `python-pillow`    | Generates patterns      |
 | `tiffcp`    | `libtiff`          | Packs TIFFs             |
 | `gs`        | `ghostscript`      | Converts PDF → XPS/TIFF |
 
@@ -71,7 +94,7 @@ missing from `PATH`.
 From anywhere:
 
 ```bash
-python utils/gen_visual_regression_data/run.py
+python utils/gen-visual-regression-data/run.py
 ```
 
 Output goes straight into `test_data/visual_regression/`, overwriting any
