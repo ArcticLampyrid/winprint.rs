@@ -198,6 +198,17 @@ mod tests {
         pdf.print(path.as_path(), Default::default()).unwrap();
     }
 
+    /// `Windows.Data.Pdf` rasterizes Type 3 glyphs on WinRT thread pool workers, all drawing
+    /// into the same device context. With a single threaded Direct2D factory the workers race
+    /// on the context's glyph realization cache and crash in `d2d1.dll` (issue #2).
+    #[test]
+    fn print_pdf_document_with_multiple_type_3_fonts() {
+        let device = null_device::thread_local();
+        let pdf = WinPdfPrinter::new(device);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/type3_glyphs.pdf");
+        pdf.print(path.as_path(), Default::default()).unwrap();
+    }
+
     /// A4 at 1600 dpi is 13229 x 18709 px, taller than the 16384 texels Direct3D 11 allows a
     /// texture. The page is still rendered whole, in one pass: `RenderPageToDeviceContext` records
     /// into a command list and never allocates a page-sized texture.

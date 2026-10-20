@@ -20,7 +20,7 @@ use windows::Win32::Graphics::Direct2D::ID2D1Factory1;
 use windows::Win32::Graphics::Direct2D::ID2D1PrintControl;
 use windows::Win32::Graphics::Direct2D::D2D1_DEVICE_CONTEXT_OPTIONS_NONE;
 use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_OPTIONS;
-use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_TYPE_SINGLE_THREADED;
+use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_TYPE_MULTI_THREADED;
 use windows::Win32::Graphics::Direct2D::D2D1_PRINT_CONTROL_PROPERTIES;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::D3D11CreateDevice;
@@ -146,11 +146,15 @@ impl DxgiPrintContext {
                 .map_err(DxgiPrintContextError::InitializeDirectX)?;
 
             let d2d_factory_options = D2D1_FACTORY_OPTIONS::default();
-            let d2d_factory: ID2D1Factory1 = D2D1CreateFactory(
-                D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                Some(&d2d_factory_options),
-            )
-            .map_err(DxgiPrintContextError::InitializeDirectX)?;
+            // Windows.Data.Pdf rasterizes Type 3 glyphs on WinRT thread pool
+            // workers, and every worker draws into this device context. A
+            // single threaded factory leaves the context's glyph realization
+            // cache unsynchronized, so concurrent workers corrupt it and
+            // crash in d2d1.dll. A multi threaded factory makes Direct2D
+            // serialize access to that state. See issue #2.
+            let d2d_factory: ID2D1Factory1 =
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, Some(&d2d_factory_options))
+                    .map_err(DxgiPrintContextError::InitializeDirectX)?;
 
             let d2d_device = d2d_factory
                 .CreateDevice(&dxgi_device)
