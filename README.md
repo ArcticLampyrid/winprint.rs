@@ -30,18 +30,20 @@ For testing with multiple features in one command, [`cargo hack`](https://github
 ### Testing on Linux Host
 Since this crate is designed for Windows, it cannot be directly tested on a Linux host. However, a script is provided to run the test suite inside a Windows 11 VM on a Linux host.
 
-**Prerequisites:** Docker with BuildKit, KVM support (`/dev/kvm`), and sufficient disk space & memory for the VM.
+**Prerequisites:** Podman/Docker with BuildKit, KVM support (`/dev/kvm`), OpenSSH clients (`ssh`, `scp`), and sufficient disk space & memory for the VM.
 
 ```bash
-./utils/test-in-windows-vm/run.sh
-```
+./utils/test-in-windows-vm/run.sh              # Start the VM if needed, then run tests
+./utils/test-in-windows-vm/run.sh --auto-stop  # Same, then stop the VM unless another run uses it
 
-The script will spins up a Windows VM and then run the test suite inside it. On first run it initializes the VM (very slowly). Subsequent runs reuse the cached VM state (relatively fast).
-
-To clear the cached VM state, run with `--destroy` flag:
-
-```bash
-./utils/test-in-windows-vm/run.sh --destroy
+./utils/test-in-windows-vm/run.sh start        # Create the container if needed and boot the VM
+./utils/test-in-windows-vm/run.sh test         # Start if needed, sync the workspace, and then run tests
+./utils/test-in-windows-vm/run.sh exec echo 0  # Start, sync and run custom commands (single, not shell)
+./utils/test-in-windows-vm/run.sh stop         # Shut down the VM and remove the container
+./utils/test-in-windows-vm/run.sh prune        # Remove the VM and guest/build state
+./utils/test-in-windows-vm/run.sh prune --all  # Also remove Vagrant boxes and image
+./utils/test-in-windows-vm/run.sh ssh          # Interactive PowerShell 7 session
+./utils/test-in-windows-vm/run.sh scp ./file.txt windows:D:/file.txt
 ```
 
 ## License

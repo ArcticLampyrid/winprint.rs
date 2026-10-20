@@ -1,117 +1,82 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-VERBOSE="${VERBOSE:-0}"
-
-run_stage() {
-    local title="$1"
-    shift
-    local exit_code=0
-    if [[ "${VERBOSE}" -eq 1 ]]; then
-        printf "==> %s\n" "${title}"
-        "$@" || exit_code=$?
-        if [ "${exit_code}" -ne 0 ]; then
-            printf "==> %s FAILED (exit code: %d)\n" "${title}" "${exit_code}" >&2
-            return "${exit_code}"
-        fi
-    else
-        local output
-        printf "%s..." "${title}"
-        output=$("$@" 2>&1) || exit_code=$?
-        if [ "${exit_code}" -eq 0 ]; then
-            printf " done\n"
-        else
-            printf " FAILED\n"
-            printf "%s\n" "${output}"
-            return "${exit_code}"
-        fi
-    fi
-}
-
-install_vagrant_plugin() {
-    vagrant plugin install vagrant-libvirt
-}
-
-configure_winrm_proxy_bypass() {
-    local network_cidr="100.117.60.48/28"
-    local network_hosts
-
-    network_hosts=$(
-        ruby -ripaddr -rsocket -e '
-            range = IPAddr.new(ARGV.fetch(0)).to_range
-            (range.begin.to_i + 1).upto(range.end.to_i - 1) do |address|
-                puts IPAddr.new(address, Socket::AF_INET)
-            end
-        ' "${network_cidr}" |
-            paste -sd, -
-    )
-
-    local bypass="${no_proxy:-${NO_PROXY:-}}"
-    bypass="${bypass:+${bypass},}${network_hosts}"
-
-    export no_proxy="${bypass}"
-    export NO_PROXY="${bypass}"
-}
+cd /app
+worker=""
 
 start_virt_services() {
-    # The libvirt configuration directory is bind-mounted by run.sh, so the
-    # image's qemu.conf is hidden. Containerized libvirt cannot change
-    # ownership or write the trusted xattrs it normally uses for QEMU files.
-    local qemu_conf=/etc/libvirt/qemu.conf
-    for setting in \
-        'user = "root"' \
-        'group = "root"' \
-        'dynamic_ownership = 0' \
-        'remember_owner = 0'; do
-        local name="${setting%% *}"
-        if grep -qE "^[[:space:]]*#?[[:space:]]*${name}[[:space:]]*=" "${qemu_conf}" 2>/dev/null; then
-            sed -i -E "s|^[[:space:]]*#?[[:space:]]*${name}[[:space:]]*=.*|${setting}|" "${qemu_conf}"
-        else
-            printf '\n%s\n' "${setting}" >> "${qemu_conf}"
-        fi
-    done
-
-    libvirtd --daemon
-    virtlogd --daemon
-    until virsh version &>/dev/null; do sleep 1; done
+  # /etc/libvirt is a persistent bind mount. Containerized libvirt must not
+  # change ownership or write trusted xattrs on QEMU images.
+  cat > /etc/libvirt/qemu.conf <<'CONF'
+user = "root"
+group = "root"
+dynamic_ownership = 0
+remember_owner = 0
+CONF
+  libvirtd --daemon
+  virtlogd --daemon
+  until virsh version &>/dev/null; do sleep 1; done
 }
 
-upload_workspace() {
-    local upload_dir="$1"
-    rsync -a \
-        --exclude='target/' \
-        --exclude='.git/' \
-        /workspace/ "${upload_dir}/"
-    vagrant upload "${upload_dir}" 'C:/workspace'
+# Halts Windows on every exit, so restarting the container never boots from a
+# hard power-off. Only docker stop (or a startup failure) ends this process.
+shutdown_vm() {
+  local result=$?
+  trap - EXIT
+  rm -f /run/vm-ready
+  if [[ -n "${worker}" ]]; then
+    kill "${worker}" 2>/dev/null || true
+    wait "${worker}" 2>/dev/null || true
+  fi
+  vagrant halt || true
+  exit "${result}"
 }
 
-if ! vagrant plugin list 2>/dev/null | grep -q vagrant-libvirt; then
-    run_stage "Installing vagrant-libvirt plugin" install_vagrant_plugin
+# /run is not a tmpfs, so state from the previous boot survives a restart.
+rm -f /run/vm-ready /run/windows-ssh-config
+trap shutdown_vm EXIT
+trap 'exit 0' TERM INT
+start_virt_services
+
+if ! vagrant plugin list | grep -q vagrant-libvirt; then
+  vagrant plugin install vagrant-libvirt
+fi
+if [[ ! -f /app/.vagrant/windows-ssh ]]; then
+  ssh-keygen -t ed25519 -N '' -f /app/.vagrant/windows-ssh
 fi
 
-run_stage "Starting virtualization services" start_virt_services
-
-if [ ! -e /dev/kvm ]; then
-    export LIBVIRT_DRIVER="qemu"
-    printf "Warning: KVM not available, falling back to QEMU (slow)\n"
+# Provisioners only run on the first boot, so failed or interrupted
+# provisioning cannot resume; start over from the box instead.
+provisioned=/app/.vagrant/provisioned
+if [[ ! -f "${provisioned}" && -f /app/.vagrant/machines/default/libvirt/id ]]; then
+  echo "Previous provisioning did not finish; recreating the VM."
+  vagrant destroy --force
 fi
 
-cd /app
+# Run as a child so PID 1 can handle docker stop during provisioning.
+# By default a failed boot destroys the VM, discarding its provisioning.
+vagrant up --provider=libvirt --no-destroy-on-error &
+worker=$!
+wait "${worker}"
+worker=""
+touch "${provisioned}"
+{
+  vagrant ssh-config
+  printf '\nHost default\n  BatchMode yes\n  ConnectTimeout 5\n'
+} > /run/windows-ssh-config
+# WinRM can become available before the automatically-started SSH service.
+ssh_deadline=$((SECONDS + 120))
+until ssh -F /run/windows-ssh-config default 'exit 0'; do
+  if [[ "${SECONDS}" -ge "${ssh_deadline}" ]]; then
+    echo "Error: Windows SSH did not become ready." >&2
+    exit 1
+  fi
+  sleep 2
+done
+touch /run/vm-ready
+echo "Windows VM ready."
 
-configure_winrm_proxy_bypass
-run_stage "Setting up Windows VM" vagrant up --provider=libvirt
-
-UPLOAD_DIR=$(mktemp -d /tmp/winprint-upload-XXXXX)
-trap 'rm -rf "${UPLOAD_DIR}"' EXIT
-
-run_stage "Cleaning up previous workspace on VM" vagrant provision --provision-with cleanup
-run_stage "Uploading workspace to VM" upload_workspace "${UPLOAD_DIR}"
-
-TEST_CODE=0
-run_stage "Running tests" vagrant provision --provision-with run-tests || TEST_CODE=$?
-
-run_stage "Cleaning up workspace after tests" vagrant provision --provision-with cleanup
-run_stage "Shutting down VM" vagrant halt
-
-printf "Tests completed with exit code: %d\n" "${TEST_CODE}"
-exit "${TEST_CODE}"
+while true; do
+  sleep infinity &
+  worker=$!
+  wait "${worker}"
+done

@@ -10,7 +10,6 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         iptables \
         openbsd-netcat \
         curl \
-        rsync \
         pkgconf \
         git \
         base-devel \
@@ -19,6 +18,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         ruby-erb \
         libxslt \
         ruby \
+        vim \
         go
 
 FROM pacman-base AS aur-builder
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     rm /tmp/*.pkg.tar.zst
 
 WORKDIR /app
-COPY --chmod=755 entrypoint-in-container.sh /app/
+COPY --chmod=755 entrypoint-in-container.sh exec-in-container.sh /app/
 COPY Vagrantfile /app/
 
 CMD ["/app/entrypoint-in-container.sh"]

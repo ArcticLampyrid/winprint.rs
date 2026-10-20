@@ -1,3 +1,15 @@
+require "base64"
+require "ipaddr"
+
+management_network = "100.117.60.48/28"
+
+# WinRM must reach the guest directly, even if the host's proxy is inherited.
+# The Vagrantfile may be loaded more than once, so the list stays deduplicated.
+ENV["no_proxy"] = ENV["NO_PROXY"] = [
+  *(ENV["no_proxy"] || ENV["NO_PROXY"]).to_s.split(","),
+  *IPAddr.new(management_network).to_range.map(&:to_s),
+].uniq.join(",")
+
 Vagrant.configure("2") do |config|
   config.vm.box = "gusztavvargadr/windows-11"
   config.vm.box_check_update = false
@@ -8,67 +20,141 @@ Vagrant.configure("2") do |config|
   config.vm.provider "libvirt" do |libvirt|
     libvirt.driver = "kvm"
     libvirt.management_network_name = "winprint-libvirt"
-    libvirt.management_network_address = "100.117.60.48/28"
+    libvirt.management_network_address = management_network
     libvirt.management_network_keep = true
     libvirt.memory = ENV.fetch("VM_MEMORY", "16384").to_i
     libvirt.cpus = ENV.fetch("VM_CPUS", "8").to_i
-    libvirt.cputopology :sockets => 1, :cores => ENV.fetch("VM_CPUS", "8").to_i, :threads => 1
+    libvirt.cputopology sockets: 1, cores: libvirt.cpus, threads: 1
+    # Windows client editions use at most 4 sockets. Without NUMA nodes,
+    # vagrant-libvirt strips the topology from host-passthrough CPUs on start,
+    # so describe the whole VM as a single node to keep it.
+    libvirt.numa_nodes = [
+      { cpus: "0-#{libvirt.cpus - 1}", memory: libvirt.memory.to_s },
+    ]
+    # A separate disk avoids nested VHDs and is mounted automatically at boot.
+    libvirt.storage :file, size: "128G", type: "raw", bus: "virtio",
+      serial: "dev-space"
   end
 
+  # The first boot after provisioning or an unclean power-off can be slow.
+  config.vm.boot_timeout = 1800
   config.winrm.max_tries = 300
   config.winrm.retry_delay = 5
+  config.ssh.username = "vagrant"
+  config.ssh.private_key_path = "/app/.vagrant/windows-ssh"
+  config.ssh.insert_key = false
+  config.ssh.disable_deprecated_algorithms = true
 
-  # Install Rust + MSVC toolchain
-  config.vm.provision "setup", run: "once", type: "shell",
-      privileged: true, powershell_elevated_interactive: false, inline: <<~PS
+  # WinRM's built-in Windows PowerShell is used only to bootstrap PowerShell 7.
+  config.vm.provision "bootstrap", run: "once", type: "shell", inline: <<~PS
     $ErrorActionPreference = "Stop"
-    Set-StrictMode -Version Latest
+    Invoke-Expression "& { $(Invoke-RestMethod 'https://aka.ms/install-powershell.ps1') } -Destination 'C:/Program Files/PowerShell/7'"
+    New-Item -ItemType Directory -Path C:/vm-utils -Force | Out-Null
+  PS
+  config.vm.provision "file", run: "once", source: "/app/.vagrant/windows-ssh.pub",
+    destination: "C:/vm-utils/windows-ssh.pub"
+
+  setup_command = <<~'POWERSHELL'
+    $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $true
+    Set-StrictMode -Version Latest
 
-    # Disable firewall
-    Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-
-    # Install Chocolatey
-    Invoke-Expression "& { $(Invoke-RestMethod 'https://aka.ms/install-powershell.ps1') } -AddToPath"
-    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-
-    Import-Module "$env:ChocolateyInstall\\helpers\\chocolateyProfile.psm1"
-
-    # Enable too long paths
-    New-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
-
-    # Install MSVC Tools + Windows SDK
-    choco install -y visualstudio2026buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US"
-
-    # Install sccache
-    winget install --source=winget --id=Mozilla.sccache -e --silent --accept-source-agreements --accept-package-agreements
-
-    # Rust toolchain
-    Invoke-WebRequest -Uri "https://win.rustup.rs/" -OutFile "$env:TEMP\\rustup-init.exe"
-    & "$env:TEMP\\rustup-init.exe" -y
-    Remove-Item "$env:TEMP\\rustup-init.exe"
-    Update-SessionEnvironment
-    cargo +stable install cargo-hack --locked
-  PS
-
-  # Run tests (called on demand via: vagrant provision --provision-with run-tests)
-  config.vm.provision "run-tests", run: "never", type: "shell",
-      privileged: true, powershell_elevated_interactive: false, inline: <<~PS
-    Import-Module "$env:ChocolateyInstall\\helpers\\chocolateyProfile.psm1"
-    Update-SessionEnvironment
-    $env:RUST_BACKTRACE=1
-    if (Get-Command sccache -ErrorAction SilentlyContinue) {
-      Write-Host "sccache is available, using it as RUSTC_WRAPPER"
-      $env:RUSTC_WRAPPER = "sccache"
+    # Identify only our dedicated disk; never format an unrelated disk.
+    $disks = @(Get-Disk | Where-Object { $_.SerialNumber -and $_.SerialNumber.Trim() -eq 'dev-space' })
+    if ($disks.Count -ne 1) {
+        throw 'Expected exactly one dev-space disk.'
     }
-    Set-Location C:\\workspace
-    cargo hack test --all-targets --each-feature --no-fail-fast
-    $TEST_EXIT_CODE = $LASTEXITCODE
-    exit $TEST_EXIT_CODE
-  PS
+    $disk = $disks[0]
+    $disk | Set-Disk -IsOffline $false
+    $disk | Set-Disk -IsReadOnly $false
+    if ($disk.PartitionStyle -eq 'RAW') {
+        if (Get-Volume -DriveLetter D -ErrorAction SilentlyContinue) {
+            throw 'Drive letter D is already in use.'
+        }
+        $disk | Initialize-Disk -PartitionStyle GPT -PassThru |
+            New-Partition -UseMaximumSize -DriveLetter D |
+            Format-Volume -DevDrive -FileSystem ReFS -NewFileSystemLabel DevSpace -Confirm:$false
+    }
+    $partition = Get-Partition -DiskNumber $disk.Number | Where-Object DriveLetter -EQ 'D'
+    if (-not $partition) {
+        throw 'Expected the dedicated Dev Drive to be assigned D:.'
+    }
+    $volume = $partition | Get-Volume
+    if ($volume.FileSystem -ne 'ReFS' -or $volume.FileSystemLabel -ne 'DevSpace') {
+        throw 'Expected the dedicated ReFS Dev Drive at D:.'
+    }
+    fsutil.exe devdrv query D:
+    New-Item -ItemType Directory -Path D:/kache -Force | Out-Null
 
-  config.vm.provision "cleanup", run: "never", type: "shell",
-      privileged: true, powershell_elevated_interactive: false, inline: <<~PS
-    Remove-Item -Path "C:\\workspace" -Recurse -Force -ErrorAction SilentlyContinue
+    New-ItemProperty -Path 'HKLM:/SYSTEM/CurrentControlSet/Control/FileSystem' `
+        -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force | Out-Null
+
+    function Install-WingetPackage([string]$Id, [string[]]$Arguments = @()) {
+        $PSNativeCommandUseErrorActionPreference = $false
+        winget install --id $Id --source winget --exact --scope machine --silent `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity @Arguments
+        # This provisioner reboots afterwards, so a pending restart is success:
+        # 0x8A150109 (REBOOT_REQUIRED_TO_FINISH), or 3010 from older winget.
+        if ($LASTEXITCODE -notin 0, -1978334967, 3010) {
+            throw "winget failed to install $Id (exit code $LASTEXITCODE)."
+        }
+    }
+    Install-WingetPackage Microsoft.VisualStudio.BuildTools -Arguments '--override',
+        '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US'
+    Install-WingetPackage kunobi-ninja.kache
+    Install-WingetPackage Microsoft.OpenSSH.Preview
+
+    Invoke-WebRequest -Uri https://win.rustup.rs/ -OutFile "$env:TEMP/rustup-init.exe"
+    & "$env:TEMP/rustup-init.exe" -y --default-toolchain stable
+    Remove-Item "$env:TEMP/rustup-init.exe"
+
+    $env:PATH = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+
+    # Select the Dev Drive cache before init configures Cargo and starts kache.
+    New-Item -ItemType Directory -Path "$HOME/.config/kache" -Force | Out-Null
+    @'
+    [cache]
+    local_store = "D:/kache"
+    '@ | Set-Content -LiteralPath "$HOME/.config/kache/config.toml" -Encoding utf8NoBOM
+    kache init --yes
+
+    cargo +stable install cargo-hack --locked
+
+    # OpenSSH uses PowerShell 7 for interactive sessions and remote commands.
+    New-ItemProperty -Path HKLM:/SOFTWARE/OpenSSH -Name DefaultShell `
+        -Value 'C:\Program Files\PowerShell\7\pwsh.exe' -PropertyType String -Force | Out-Null
+    # sshd generates its host keys and default sshd_config on first start.
+    Set-Service -Name sshd -StartupType Automatic
+    Start-Service -Name sshd
+
+    # The stock sshd_config reads keys for Administrators members (vagrant is
+    # one) only from this file, which only Administrators and SYSTEM may access.
+    $adminKeysPath = Join-Path $env:ProgramData 'ssh/administrators_authorized_keys'
+    Copy-Item C:/vm-utils/windows-ssh.pub $adminKeysPath -Force
+    icacls.exe $adminKeysPath /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null
+    New-Item -ItemType Directory -Path "$HOME/.ssh" -Force | Out-Null
+    Copy-Item C:/vm-utils/windows-ssh.pub "$HOME/.ssh/authorized_keys" -Force
+
+    # Global keywords after a Match line would only apply within that block.
+    $sshdConfigPath = Join-Path $env:ProgramData 'ssh/sshd_config'
+    $sshdConfig = @(Get-Content -LiteralPath $sshdConfigPath)
+    if (-not ($sshdConfig -match '^\s*AcceptEnv\s+WORKSPACE_PATH\s*$')) {
+        $firstMatch = $sshdConfig | Select-String -Pattern '^\s*Match\s' | Select-Object -First 1
+        $globalCount = if ($firstMatch) { $firstMatch.LineNumber - 1 } else { $sshdConfig.Count }
+        @($sshdConfig | Select-Object -First $globalCount) + 'AcceptEnv WORKSPACE_PATH' +
+            @($sshdConfig | Select-Object -Skip $globalCount) |
+            Set-Content -LiteralPath $sshdConfigPath -Encoding utf8NoBOM
+    }
+    if (-not (Get-NetFirewallRule -Name OpenSSH-Server-In-TCP -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -Name OpenSSH-Server-In-TCP `
+            -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow | Out-Null
+    }
+    Restart-Service -Name sshd
+  POWERSHELL
+  config.vm.provision "setup", run: "once", type: "shell", reboot: true, privileged: true,
+      powershell_elevated_interactive: false, inline: <<~PS
+    $ErrorActionPreference = "Stop"
+    & 'C:/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -EncodedCommand '#{Base64.strict_encode64(setup_command.encode("UTF-16LE"))}'
+    exit $LASTEXITCODE
   PS
 end
