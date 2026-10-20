@@ -106,7 +106,7 @@ mod utils;
 mod tests {
     use ctor::ctor;
 
-    #[ctor]
+    #[ctor(unsafe)]
     fn setup() {
         env_logger::init();
     }

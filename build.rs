@@ -21,7 +21,7 @@ mod pdfium {
     use sigstore_verify::{verify, VerificationPolicy};
     use tar::{Archive, EntryType};
 
-    const DEFAULT_PDFIUM_BUILD_ID: &str = "7802";
+    const DEFAULT_PDFIUM_BUILD_ID: &str = "8111";
     const PDFIUM_ATTESTATION_NAME: &str = "pdfium-attestation.json";
     const PDFIUM_CERTIFICATE_ISSUER: &str = "https://token.actions.githubusercontent.com";
     const VERIFIED_MARKER_FILE: &str = ".sigstore-verified";
@@ -120,7 +120,7 @@ mod pdfium {
     ) -> Result<(), Box<dyn Error>> {
         let bundle = Bundle::from_json(std::str::from_utf8(attestation_json)?)?;
         let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)?;
-        let policy = VerificationPolicy::default().require_issuer(PDFIUM_CERTIFICATE_ISSUER);
+        let policy = VerificationPolicy::any_identity().require_issuer(PDFIUM_CERTIFICATE_ISSUER);
 
         verify(binary_package, &bundle, &policy, &trusted_root)
             .map_err(|err| format!("Failed to verify PDFium Sigstore attestation: {err}"))?;

@@ -101,8 +101,21 @@ Vagrant.configure("2") do |config|
     }
     Install-WingetPackage Microsoft.VisualStudio.BuildTools -Arguments '--override',
         '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US'
+    Install-WingetPackage LLVM.LLVM
     Install-WingetPackage kunobi-ninja.kache
     Install-WingetPackage Microsoft.OpenSSH.Preview
+
+    # kache supports clang-cl, not cl.exe; retain MSVC for its linker and SDK.
+    $llvmBin = Join-Path $env:ProgramFiles 'LLVM/bin'
+    if (-not (Test-Path -LiteralPath (Join-Path $llvmBin 'clang-cl.exe'))) {
+        throw 'LLVM installation did not provide clang-cl.exe.'
+    }
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    [Environment]::SetEnvironmentVariable('Path', "$machinePath;$llvmBin", 'Machine')
+    foreach ($variable in 'CC', 'CXX') {
+        [Environment]::SetEnvironmentVariable($variable, 'kache clang-cl', 'Machine')
+        Set-Item -LiteralPath "Env:$variable" -Value 'kache clang-cl'
+    }
 
     Invoke-WebRequest -Uri https://win.rustup.rs/ -OutFile "$env:TEMP/rustup-init.exe"
     & "$env:TEMP/rustup-init.exe" -y --default-toolchain stable
