@@ -55,6 +55,9 @@ pub trait ParsableXmlDocument: Sized {
 }
 
 fn parse_qname(namespace: &Namespace, value: &str) -> OwnedName {
+    // `xsd:QName` has the `collapse` whitespace facet, so surrounding whitespace
+    // is valid in both QName-valued attributes and QName values.
+    let value = value.trim();
     let prefix_index = value.find(':');
     if let Some(prefix_index) = prefix_index {
         let (prefix, local_name) = value.split_at(prefix_index);
@@ -106,20 +109,26 @@ impl PsfValueContext {
     fn parse(self) -> Result<PropertyValue, ParsePrintSchemaError> {
         if self.value_type.namespace_ref() == Some(NS_XSD) {
             match self.value_type.local_name.as_str() {
+                // `xsd:string` has the `preserve` whitespace facet.
                 "string" => return Ok(PropertyValue::String(self.value)),
                 "integer" => {
-                    return self.value.parse().map(PropertyValue::Integer).map_err(|_| {
-                        ParsePrintSchemaError::InvalidPrintSchema {
+                    // `xsd:integer` has the `collapse` whitespace facet,
+                    // so surrounding whitespace is valid.
+                    return self
+                        .value
+                        .trim()
+                        .parse()
+                        .map(PropertyValue::Integer)
+                        .map_err(|_| ParsePrintSchemaError::InvalidPrintSchema {
                             pos: self.pos,
                             reason: "Invalid integer".to_string(),
-                        }
-                    })
+                        });
                 }
                 "QName" => {
                     return Ok(PropertyValue::QName(parse_qname(
                         &self.namespace,
                         &self.value,
-                    )))
+                    )));
                 }
                 _ => {}
             };
@@ -490,8 +499,125 @@ impl ParsableXmlDocument for PrintTicketDocument {
 mod tests {
     use super::{ParsableXmlDocument, ParsePrintSchemaError};
     use crate::ticket::document::{
-        PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument,
+        PrintCapabilitiesDocument, PrintSchemaDocument, PrintTicketDocument, PropertyValue,
+        WithProperties, NS_PSF, NS_PSK,
     };
+
+    fn parse_capabilities(body: &str) -> Result<PrintCapabilitiesDocument, ParsePrintSchemaError> {
+        let xml = format!(
+            r#"<psf:PrintCapabilities version="1"
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+{body}
+</psf:PrintCapabilities>"#
+        );
+        PrintCapabilitiesDocument::parse_from_bytes(xml)
+    }
+
+    fn property_value<'a>(
+        document: &'a PrintCapabilitiesDocument,
+        name: &str,
+    ) -> Option<&'a PropertyValue> {
+        document
+            .parameter_defs
+            .first()?
+            .get_property(name, Some(NS_PSF))?
+            .value
+            .as_ref()
+    }
+
+    // Regression test: some drivers (e.g. Toshiba) emit whitespace-padded integers,
+    // which are valid XSD because `xsd:integer` has the `collapse` whitespace facet.
+    #[test]
+    fn integer_value_with_surrounding_whitespace() {
+        let document = parse_capabilities(
+            r#"<psf:ParameterDef name="psk:JobCopiesAllDocuments">
+                <psf:Property name="psf:MaxValue">
+                    <psf:Value xsi:type="xsd:integer"> 16900 </psf:Value>
+                </psf:Property>
+            </psf:ParameterDef>"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            property_value(&document, "MaxValue").and_then(|x| x.integer()),
+            Some(16900)
+        );
+    }
+
+    #[test]
+    fn integer_value_with_inner_whitespace_is_invalid() {
+        let result = parse_capabilities(
+            r#"<psf:ParameterDef name="psk:JobCopiesAllDocuments">
+                <psf:Property name="psf:MaxValue">
+                    <psf:Value xsi:type="xsd:integer"> 16 900 </psf:Value>
+                </psf:Property>
+            </psf:ParameterDef>"#,
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParsePrintSchemaError::InvalidPrintSchema { .. })
+        ));
+    }
+
+    #[test]
+    fn qname_value_with_surrounding_whitespace() {
+        let document = parse_capabilities(
+            r#"<psf:ParameterDef name="psk:JobCopiesAllDocuments">
+                <psf:Property name="psf:Mandatory">
+                    <psf:Value xsi:type="xsd:QName"> psk:Unconditional </psf:Value>
+                </psf:Property>
+            </psf:ParameterDef>"#,
+        )
+        .unwrap();
+
+        let qname = property_value(&document, "Mandatory")
+            .and_then(|x| x.qualified_name())
+            .unwrap();
+        assert_eq!(qname.prefix_ref(), Some("psk"));
+        assert_eq!(qname.local_name, "Unconditional");
+        assert_eq!(qname.namespace_ref(), Some(NS_PSK));
+    }
+
+    #[test]
+    fn qname_attributes_with_surrounding_whitespace() {
+        let document = parse_capabilities(
+            r#"<psf:ParameterDef name=" psk:JobCopiesAllDocuments ">
+                <psf:Property name="psf:MaxValue">
+                    <psf:Value xsi:type=" xsd:integer "> 16900 </psf:Value>
+                </psf:Property>
+            </psf:ParameterDef>"#,
+        )
+        .unwrap();
+
+        let parameter_def = &document.parameter_defs[0];
+        assert_eq!(parameter_def.name.local_name, "JobCopiesAllDocuments");
+        assert_eq!(parameter_def.name.namespace_ref(), Some(NS_PSK));
+        assert_eq!(
+            property_value(&document, "MaxValue").and_then(|x| x.integer()),
+            Some(16900)
+        );
+    }
+
+    #[test]
+    fn string_value_keeps_surrounding_whitespace() {
+        let document = parse_capabilities(
+            r#"<psf:ParameterDef name="psk:JobCopiesAllDocuments">
+                <psf:Property name="psf:UnitType">
+                    <psf:Value xsi:type="xsd:string"> copies </psf:Value>
+                </psf:Property>
+            </psf:ParameterDef>"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            property_value(&document, "UnitType"),
+            Some(&PropertyValue::String(" copies ".to_string()))
+        );
+    }
 
     #[test]
     fn wrong_type_should_return_error() {
