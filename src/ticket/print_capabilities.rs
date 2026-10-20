@@ -196,7 +196,6 @@ impl PrintCapabilities {
     /// # Note
     /// This corresponds to the Print Schema's `JobCopiesAllDocuments` keyword, not the `DocumentCopiesAllPages` keyword, or the `PageCopies` keyword. If the printer can print unlimited copies, the property value is 9999.
     pub fn max_copies(&self) -> Option<Copies> {
-        println!("{:#?}", self.document.parameter_defs);
         self.document
             .parameter_defs
             .iter()
