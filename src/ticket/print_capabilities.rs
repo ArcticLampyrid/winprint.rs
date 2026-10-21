@@ -6,8 +6,8 @@ use super::{
     },
     Collation, Copies, InputBin, JobDuplex, JobPageOrder, JobStapling, PageBorderless,
     PageDeviceFontSubstitution, PageMediaSize, PageMediaType, PageOrientation, PageOutputColor,
-    PageOutputQuality, PagePhotoPrintingIntent, PageResolution, PageTrueTypeFontMode, PrintTicket,
-    StaticFeaturePathOptionPack,
+    PageOutputQuality, PagePhotoPrintingIntent, PageResolution, PageTrueTypeFontMode,
+    PagesPerSheet, PagesPerSheetDirection, PrintTicket, StaticFeaturePathOptionPack,
 };
 use crate::{
     printer::PrinterDevice,
@@ -270,6 +270,24 @@ impl PrintCapabilities {
         JobPageOrder::list(self)
     }
 
+    /// Get all supported numbers of pages per sheet.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `JobNUpAllDocumentsContiguously` keyword,
+    /// not the `DocumentNUp` keyword.
+    pub fn pages_per_sheet(&self) -> impl Iterator<Item = PagesPerSheet> + '_ {
+        PagesPerSheet::list(self)
+    }
+
+    /// Get all supported pages per sheet directions.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PresentationDirection` sub-feature of
+    /// the `JobNUpAllDocumentsContiguously` keyword, not the `DocumentNUp` keyword.
+    pub fn pages_per_sheet_directions(&self) -> impl Iterator<Item = PagesPerSheetDirection> + '_ {
+        PagesPerSheetDirection::list(self)
+    }
+
     /// Get all supported photo printing intents.
     ///
     /// # Note
@@ -401,6 +419,18 @@ mod tests {
     <psf:Feature name="psk:PagePhotoPrintingIntent">
         <psf:Option name="psk:PhotoBest" />
     </psf:Feature>
+    <psf:Feature name="psk:JobNUpAllDocumentsContiguously">
+        <psf:Option>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">2</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+        <psf:Option>
+            <psf:ScoredProperty name="psk:PagesPerSheet">
+                <psf:Value xsi:type="xsd:integer">4</psf:Value>
+            </psf:ScoredProperty>
+        </psf:Option>
+    </psf:Feature>
 </psf:PrintCapabilities>"#;
 
     #[test]
@@ -507,6 +537,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![PredefinedPhotoPrintingIntent::PhotoBest]
         );
+        assert_eq!(
+            capabilities
+                .pages_per_sheet()
+                .map(|x| x.pages_per_sheet())
+                .collect::<Vec<_>>(),
+            vec![2, 4]
+        );
     }
 
     #[test]
@@ -532,6 +569,7 @@ mod tests {
         capabilities
             .photo_printing_intents()
             .for_each(assert_converted);
+        capabilities.pages_per_sheet().for_each(assert_converted);
     }
 
     #[test]
@@ -552,6 +590,13 @@ mod tests {
         assert!(capabilities
             .input_bins()
             .any(|x| x.as_predefined_name() == Some(PredefinedInputBin::AutoSelect)));
+        assert_eq!(
+            capabilities
+                .pages_per_sheet()
+                .map(|x| x.pages_per_sheet())
+                .collect::<Vec<_>>(),
+            vec![1, 2, 4, 6, 9, 16]
+        );
     }
 
     #[test]
