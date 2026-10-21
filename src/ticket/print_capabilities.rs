@@ -4,7 +4,7 @@ use super::{
         ParameterInit, PrintCapabilitiesDocument, PrintFeature, PrintFeatureOption, WithProperties,
         NS_PSF, NS_PSK,
     },
-    Collation, Copies, JobDuplex, JobPageOrder, JobStapling, PageBorderless,
+    Collation, Copies, InputBin, JobDuplex, JobPageOrder, JobStapling, PageBorderless,
     PageDeviceFontSubstitution, PageMediaSize, PageMediaType, PageOrientation, PageOutputColor,
     PageOutputQuality, PagePhotoPrintingIntent, PageResolution, PageTrueTypeFontMode, PrintTicket,
     StaticFeaturePathOptionPack,
@@ -252,6 +252,16 @@ impl PrintCapabilities {
         PageTrueTypeFontMode::list(self)
     }
 
+    /// Get all supported input bins.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `JobInputBin` keyword, falling back to
+    /// the `DocumentInputBin` keyword, and then to the `PageInputBin` keyword, when
+    /// the wider scope is not supported.
+    pub fn input_bins(&self) -> impl Iterator<Item = InputBin> + '_ {
+        InputBin::list(self)
+    }
+
     /// Get all supported page orders.
     ///
     /// # Note
@@ -339,9 +349,9 @@ mod tests {
             document::{OwnedName, ParameterInit, PrintFeatureOption, NS_PSK},
             test_helpers::{assert_converted, capabilities_from_xml, capabilities_with_features},
             FeatureOptionPackWithPredefined, PredefinedCollation, PredefinedDeviceFontSubstitution,
-            PredefinedPageBorderless, PredefinedPageMediaType, PredefinedPageOrder,
-            PredefinedPageOutputQuality, PredefinedPhotoPrintingIntent, PredefinedStapling,
-            PredefinedTrueTypeFontMode, StaticFeaturePathOptionPack,
+            PredefinedInputBin, PredefinedPageBorderless, PredefinedPageMediaType,
+            PredefinedPageOrder, PredefinedPageOutputQuality, PredefinedPhotoPrintingIntent,
+            PredefinedStapling, PredefinedTrueTypeFontMode, StaticFeaturePathOptionPack,
         },
     };
 
@@ -359,6 +369,10 @@ mod tests {
     <psf:Feature name="psk:PageDeviceFontSubstitution">
         <psf:Option name="psk:On" />
         <psf:Option name="psk:Off" />
+    </psf:Feature>
+    <psf:Feature name="psk:JobInputBin">
+        <psf:Option name="ns0000:Option1" />
+        <psf:Option name="psk:AutoSelect" />
     </psf:Feature>
     <psf:Feature name="psk:PageMediaType">
         <psf:Option name="psk:Plain" />
@@ -424,6 +438,13 @@ mod tests {
                 PredefinedDeviceFontSubstitution::On,
                 PredefinedDeviceFontSubstitution::Off
             ]
+        );
+        assert_eq!(
+            capabilities
+                .input_bins()
+                .map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![None, Some(PredefinedInputBin::AutoSelect)]
         );
         assert_eq!(
             capabilities
@@ -495,6 +516,7 @@ mod tests {
         capabilities
             .device_font_substitutions()
             .for_each(assert_converted);
+        capabilities.input_bins().for_each(assert_converted);
         capabilities.page_media_types().for_each(assert_converted);
         capabilities
             .page_borderless_options()
@@ -527,6 +549,9 @@ mod tests {
                 PredefinedCollation::Uncollated
             ]
         );
+        assert!(capabilities
+            .input_bins()
+            .any(|x| x.as_predefined_name() == Some(PredefinedInputBin::AutoSelect)));
     }
 
     #[test]
