@@ -1,11 +1,11 @@
 use super::{
     document::{
         reader::{ParsableXmlDocument, ParsePrintSchemaError},
-        ParameterInit, PrintCapabilitiesDocument, PrintFeatureOption, WithProperties, NS_PSF,
-        NS_PSK,
+        ParameterInit, PrintCapabilitiesDocument, PrintFeature, PrintFeatureOption, WithProperties,
+        NS_PSF, NS_PSK,
     },
-    Copies, FeatureOptionPack, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor,
-    PageResolution, PrintTicket,
+    Copies, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor, PageResolution,
+    PrintTicket, StaticFeaturePathOptionPack,
 };
 use crate::{
     printer::PrinterDevice,
@@ -148,18 +148,26 @@ impl PrintCapabilities {
             })
     }
 
-    /// Get all options for the given feature.
+    /// Defines the parameters that the given option depends on with default values.
+    pub(crate) fn default_parameters_for_option(
+        &self,
+        option: &PrintFeatureOption,
+    ) -> Vec<ParameterInit> {
+        self.default_parameters_for(option.parameters_dependent().as_slice())
+            .collect()
+    }
+
+    /// Get all options for the given feature path.
+    ///
+    /// The path consists of namespace-qualified names, ordered from the outermost
+    /// feature to the innermost sub-feature. Names are matched by namespace URI and
+    /// local name, ignoring prefixes.
     pub fn options_for_feature(
         &self,
-        feature_name: OwnedName,
+        feature_path: &[OwnedName],
     ) -> impl Iterator<Item = &PrintFeatureOption> + '_ {
-        self.document
-            .features
-            .iter()
-            .filter(move |x| {
-                x.name.local_name == feature_name.local_name
-                    && x.name.namespace == feature_name.namespace
-            })
+        features_at_path(&self.document.features, feature_path)
+            .into_iter()
             .flat_map(|x| x.options.iter())
     }
 
@@ -211,10 +219,51 @@ impl PrintCapabilities {
     }
 }
 
+/// Get the features that the given path points to.
+///
+/// The names of the path are namespace-qualified, ordered from the outermost
+/// feature to the innermost sub-feature.
+pub(crate) fn features_at_path<'a>(
+    features: &'a [PrintFeature],
+    feature_path: &[OwnedName],
+) -> Vec<&'a PrintFeature> {
+    let Some((first, rest)) = feature_path.split_first() else {
+        return vec![];
+    };
+    rest.iter().fold(
+        features
+            .iter()
+            .filter(|x| name_matches(&x.name, first))
+            .collect(),
+        |level, name| {
+            level
+                .into_iter()
+                .flat_map(|x| &x.features)
+                .filter(|x| name_matches(&x.name, name))
+                .collect()
+        },
+    )
+}
+
+/// Check whether two names are the same, by namespace URI and local name,
+/// ignoring prefixes.
+pub(crate) fn name_matches(a: &OwnedName, b: &OwnedName) -> bool {
+    a.local_name == b.local_name && a.namespace == b.namespace
+}
+
 #[cfg(test)]
 mod tests {
     use super::PrintCapabilities;
-    use crate::test_utils::null_device;
+    use crate::{
+        test_utils::null_device,
+        ticket::{
+            define_feature_option_pack,
+            document::{OwnedName, ParameterInit, PrintFeatureOption, NS_PSK},
+            test_helpers::{assert_converted, capabilities_from_xml, capabilities_with_features},
+            StaticFeaturePathOptionPack,
+        },
+    };
+
     #[test]
     fn test_fetch_xml() {
         let device = null_device::thread_local();
@@ -225,5 +274,103 @@ mod tests {
     fn test_fetch_xml_and_parse() {
         let device = null_device::thread_local();
         PrintCapabilities::fetch(&device).unwrap();
+    }
+
+    #[test]
+    fn feature_paths_match_namespaces_not_prefixes() {
+        let capabilities = capabilities_with_features(
+            r#"<psf:Feature name="psk:Root">
+    <psf:Option name="psk:PublicRoot" />
+    <psf:Feature name="psk:Child">
+        <psf:Option name="psk:PublicChild" />
+    </psf:Feature>
+    <psf:Feature xmlns:v="urn:vendor" name="v:Child">
+        <psf:Option name="v:PrivateChild" />
+    </psf:Feature>
+</psf:Feature>
+<psf:Feature xmlns:v="urn:vendor" name="v:Root">
+    <psf:Option name="v:PrivateRoot" />
+</psf:Feature>"#,
+        );
+        let public_root = OwnedName::qualified("Root", NS_PSK, Some("keywords"));
+        let private_root = OwnedName::qualified("Root", "urn:vendor", Some("vendor"));
+        let public_child = OwnedName::qualified("Child", NS_PSK, Some("keywords"));
+        let private_child = OwnedName::qualified("Child", "urn:vendor", Some("vendor"));
+        for (path, expected) in [
+            (vec![public_root.clone()], "PublicRoot"),
+            (vec![private_root], "PrivateRoot"),
+            (vec![public_root.clone(), public_child], "PublicChild"),
+            (vec![public_root, private_child], "PrivateChild"),
+        ] {
+            let options = capabilities.options_for_feature(&path).collect::<Vec<_>>();
+            assert_eq!(options.len(), 1);
+            assert_eq!(options[0].name.as_ref().unwrap().local_name, expected);
+        }
+        assert_eq!(
+            capabilities
+                .options_for_feature(&[OwnedName::qualified("Root", "urn:other", Some("psk"))])
+                .count(),
+            0
+        );
+        assert_eq!(capabilities.options_for_feature(&[]).count(), 0);
+    }
+
+    #[test]
+    fn feature_paths_reach_vendor_sub_features_from_driver_output() {
+        let capabilities =
+            capabilities_from_xml(include_bytes!("../../test_data/print_capabilities.xml"));
+        let parent = capabilities
+            .document
+            .features
+            .iter()
+            .find(|x| x.name.local_name == "JobNUpAllDocumentsContiguously")
+            .unwrap();
+        let borders = parent
+            .features
+            .iter()
+            .find(|x| x.name.local_name == "Borders")
+            .unwrap();
+        let mut path = vec![OwnedName::qualified(
+            "JobNUpAllDocumentsContiguously",
+            NS_PSK,
+            Some("psk"),
+        )];
+        path.push(borders.name.clone());
+        assert_eq!(
+            capabilities
+                .options_for_feature(&path)
+                .map(|x| x.name.as_ref().unwrap().local_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Off", "On"]
+        );
+    }
+
+    #[test]
+    fn custom_packs_preserve_feature_namespaces_in_print_tickets() {
+        define_feature_option_pack!(
+            vec![OwnedName::qualified("Root", "urn:vendor", Some("vendor"))],
+            VendorRoot
+        );
+        define_feature_option_pack!(
+            vec![
+                OwnedName::qualified("Root", NS_PSK, Some("psk")),
+                OwnedName::qualified("Child", "urn:vendor", Some("vendor")),
+            ],
+            VendorChild
+        );
+        let capabilities = capabilities_with_features(
+            r#"<psf:Feature xmlns:v="urn:vendor" name="v:Root">
+    <psf:Option name="v:Enabled" />
+</psf:Feature>
+<psf:Feature name="psk:Root">
+    <psf:Feature xmlns:v="urn:vendor" name="v:Child">
+        <psf:Option name="v:Enabled" />
+    </psf:Feature>
+</psf:Feature>"#,
+        );
+        assert_eq!(VendorRoot::list(&capabilities).count(), 1);
+        VendorRoot::list(&capabilities).for_each(assert_converted);
+        assert_eq!(VendorChild::list(&capabilities).count(), 1);
+        VendorChild::list(&capabilities).for_each(assert_converted);
     }
 }

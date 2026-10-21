@@ -16,6 +16,8 @@ mod predefined_page_orientation;
 mod predefined_page_output_color;
 mod print_capabilities;
 mod print_ticket;
+#[cfg(test)]
+mod test_helpers;
 
 pub use builder::*;
 pub use copies::*;

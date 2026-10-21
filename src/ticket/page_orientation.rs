@@ -1,12 +1,11 @@
 use super::{
     define_feature_option_pack,
-    document::{ParameterInit, PrintFeatureOption, NS_PSK},
+    document::{OwnedName, ParameterInit, PrintFeatureOption, NS_PSK},
     PredefinedPageOrientation,
 };
-use xml::name::OwnedName;
 
 define_feature_option_pack!(
-    OwnedName::qualified("PageOrientation", NS_PSK, Some("psk")),
+    vec![OwnedName::qualified("PageOrientation", NS_PSK, Some("psk"))],
     PageOrientation,
     PredefinedPageOrientation
 );

@@ -1,12 +1,11 @@
 use super::{
     define_feature_option_pack,
-    document::{ParameterInit, PrintFeatureOption, WithScoredProperties, NS_PSK},
+    document::{OwnedName, ParameterInit, PrintFeatureOption, WithScoredProperties, NS_PSK},
     MediaSizeTuple, PredefinedMediaName,
 };
-use xml::name::OwnedName;
 
 define_feature_option_pack!(
-    OwnedName::qualified("PageMediaSize", NS_PSK, Some("psk")),
+    vec![OwnedName::qualified("PageMediaSize", NS_PSK, Some("psk"))],
     PageMediaSize,
     PredefinedMediaName
 );

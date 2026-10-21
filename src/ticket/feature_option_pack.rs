@@ -15,13 +15,21 @@ pub trait PredefinedName: Sized {
     fn from_name(name: &OwnedName) -> Option<Self>;
 }
 
-/// A trait for the feature option pack.
+/// A trait for a pack that carries one option of a feature.
+///
+/// The feature is identified by a path of names, from the outermost feature to the
+/// innermost sub-feature. A pack such as [`InputBin`](crate::ticket::InputBin) may
+/// carry options of different features, so the path is only known per instance.
+/// Packs that are always an option of one fixed feature path also implement
+/// [`StaticFeaturePathOptionPack`].
 pub trait FeatureOptionPack: Sized {
-    /// Create a new instance.
-    fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self;
-
-    /// Get the feature name of the option.
-    fn feature_name() -> OwnedName;
+    /// Get the path of features that the option of this pack belongs to.
+    ///
+    /// The names are namespace-qualified, ordered from the outermost feature to
+    /// the innermost sub-feature. When the path has more than one name, converting
+    /// the pack into a [`PrintTicket`] nests the option under its ancestors, which
+    /// then carry no option of their own.
+    fn option_feature_path(&self) -> &[OwnedName];
 
     /// Get the DOM of the option.
     fn option(&self) -> &PrintFeatureOption;
@@ -43,17 +51,34 @@ pub trait FeatureOptionPack: Sized {
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.string())
     }
+}
+
+/// A trait for the feature option pack whose feature path is known statically.
+///
+/// Such a pack is always an option of one fixed feature path, so that it can be
+/// created from an option and can list all options that the capabilities document
+/// defines for that feature.
+pub trait StaticFeaturePathOptionPack: FeatureOptionPack {
+    /// Create a new instance.
+    fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self;
+
+    /// Get the path of features that the option of this pack belongs to.
+    fn feature_path() -> &'static [OwnedName];
+
+    /// Create a new instance from the given option, filling in the default values
+    /// of the parameters that the option depends on.
+    fn from_option(capabilities: &PrintCapabilities, option: &PrintFeatureOption) -> Self {
+        Self::new(
+            option.clone(),
+            capabilities.default_parameters_for_option(option),
+        )
+    }
 
     /// List all possible options defined in the capabilities.
     fn list(capabilities: &PrintCapabilities) -> impl Iterator<Item = Self> + '_ {
         capabilities
-            .options_for_feature(Self::feature_name())
-            .map(move |option| {
-                let default_parameters = capabilities
-                    .default_parameters_for(option.parameters_dependent().as_slice())
-                    .collect();
-                Self::new(option.clone(), default_parameters)
-            })
+            .options_for_feature(Self::feature_path())
+            .map(|option| Self::from_option(capabilities, option))
     }
 }
 
@@ -62,16 +87,33 @@ where
     T: FeatureOptionPack,
 {
     fn from(value: T) -> Self {
+        let feature_path = value.option_feature_path().to_vec();
         let (option, parameters) = value.into_option_with_parameters();
+        // Nest the option under its ancestors, from the innermost one outwards.
+        let features = feature_path
+            .split_last()
+            .map(|(leaf, ancestors)| {
+                ancestors.iter().rev().fold(
+                    PrintFeature {
+                        name: leaf.clone(),
+                        properties: vec![],
+                        options: vec![option],
+                        features: vec![],
+                    },
+                    |feature, name| PrintFeature {
+                        name: name.clone(),
+                        properties: vec![],
+                        options: vec![],
+                        features: vec![feature],
+                    },
+                )
+            })
+            .into_iter()
+            .collect();
         PrintTicketDocument {
             properties: vec![],
             parameter_inits: parameters,
-            features: vec![PrintFeature {
-                name: T::feature_name(),
-                properties: vec![],
-                options: vec![option],
-                features: vec![],
-            }],
+            features,
         }
         .into()
     }
@@ -92,23 +134,27 @@ pub trait FeatureOptionPackWithPredefined: FeatureOptionPack {
     }
 }
 
-/// Implement the [`FeatureOptionPack`] for the given type.
+/// Implement the feature option pack traits for the given type.
+///
+/// This implements [`FeatureOptionPack`] and, since the feature path is given by
+/// `$feature_path`, [`StaticFeaturePathOptionPack`].
 ///
 /// # Parameters
-/// - `$feature_name:expr`: The feature name of the option.
+/// - `$feature_path:expr`: A vector of namespace-qualified feature names, from the
+///   outermost feature to the innermost sub-feature.
 /// - `$name:ident`: The type to define.
 /// - `$predefined_name:ident`: The type of predefined name. If not specified, the type is not predefined.
 ///
 /// # Example
 /// ```ignore
 /// define_feature_option_pack!(
-///     OwnedName::qualified("MyFeature", NS_PSK, Some("psk")),
+///     vec![OwnedName::qualified("MyFeature", NS_PSK, Some("psk"))],
 ///     MyPack,
 ///     MyPredefinedName
 /// );
 /// ```
 macro_rules! define_feature_option_pack {
-    ($feature_name:expr, $name:ident) => {
+    ($feature_path:expr, $name:ident) => {
         #[derive(Clone, Debug)]
         #[doc = concat!("Represents a feature option pack as [`", stringify!($name), "`].")]
         pub struct $name {
@@ -119,12 +165,8 @@ macro_rules! define_feature_option_pack {
         }
 
         impl crate::ticket::FeatureOptionPack for $name {
-            fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self {
-                Self { option, parameters }
-            }
-
-            fn feature_name() -> OwnedName {
-                $feature_name
+            fn option_feature_path(&self) -> &[xml::name::OwnedName] {
+                <Self as crate::ticket::StaticFeaturePathOptionPack>::feature_path()
             }
 
             fn option(&self) -> &PrintFeatureOption {
@@ -147,9 +189,21 @@ macro_rules! define_feature_option_pack {
                 (self.option, self.parameters)
             }
         }
+
+        impl crate::ticket::StaticFeaturePathOptionPack for $name {
+            fn new(option: PrintFeatureOption, parameters: Vec<ParameterInit>) -> Self {
+                Self { option, parameters }
+            }
+
+            fn feature_path() -> &'static [xml::name::OwnedName] {
+                static PATH: std::sync::LazyLock<Vec<xml::name::OwnedName>> =
+                    std::sync::LazyLock::new(|| $feature_path);
+                &PATH
+            }
+        }
     };
-    ($feature_name:expr, $name:ident, $predefined_name:ident) => {
-        define_feature_option_pack!($feature_name, $name);
+    ($feature_path:expr, $name:ident, $predefined_name:ident) => {
+        define_feature_option_pack!($feature_path, $name);
 
         impl crate::ticket::FeatureOptionPackWithPredefined for $name {
             type PredefinedName = $predefined_name;

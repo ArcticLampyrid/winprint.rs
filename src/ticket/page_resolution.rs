@@ -1,11 +1,10 @@
 use super::{
     define_feature_option_pack,
-    document::{ParameterInit, PrintFeatureOption, WithScoredProperties, NS_PSK},
+    document::{OwnedName, ParameterInit, PrintFeatureOption, WithScoredProperties, NS_PSK},
 };
-use xml::name::OwnedName;
 
 define_feature_option_pack!(
-    OwnedName::qualified("PageResolution", NS_PSK, Some("psk")),
+    vec![OwnedName::qualified("PageResolution", NS_PSK, Some("psk"))],
     PageResolution
 );
 
