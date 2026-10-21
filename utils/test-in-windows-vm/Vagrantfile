@@ -19,18 +19,23 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider "libvirt" do |libvirt|
     libvirt.driver = "kvm"
+    libvirt.clock_offset = "localtime"
+    libvirt.clock_timezone = "America/Los_Angeles"
+    libvirt.clock_timer :name => 'rtc', :tickpolicy => 'catchup'
+    libvirt.clock_timer :name => 'pit', :tickpolicy => 'delay'
+    libvirt.clock_timer :name => 'hpet', :present => 'no'
+    libvirt.clock_timer :name => 'hypervclock', :present => 'yes'
+    libvirt.hyperv_feature :name => 'relaxed', :state => 'on'
+    libvirt.hyperv_feature :name => 'vapic',   :state => 'on'
+    libvirt.hyperv_feature :name => 'spinlocks', :state => 'on', :retries => '8191'
+
     libvirt.management_network_name = "winprint-libvirt"
     libvirt.management_network_address = management_network
     libvirt.management_network_keep = true
     libvirt.memory = ENV.fetch("VM_MEMORY", "16384").to_i
     libvirt.cpus = ENV.fetch("VM_CPUS", "8").to_i
+    libvirt.cpu_mode = "host-model"
     libvirt.cputopology sockets: 1, cores: libvirt.cpus, threads: 1
-    # Windows client editions use at most 4 sockets. Without NUMA nodes,
-    # vagrant-libvirt strips the topology from host-passthrough CPUs on start,
-    # so describe the whole VM as a single node to keep it.
-    libvirt.numa_nodes = [
-      { cpus: "0-#{libvirt.cpus - 1}", memory: libvirt.memory.to_s },
-    ]
     # A separate disk avoids nested VHDs and is mounted automatically at boot.
     libvirt.storage :file, size: "128G", type: "raw", bus: "virtio",
       serial: "dev-space"
