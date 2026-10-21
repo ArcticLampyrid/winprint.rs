@@ -1,4 +1,4 @@
-use super::{PrintTicket, DEFAULT_PRINT_TICKET_XML};
+use super::PrintTicket;
 use crate::{
     printer::PrinterDevice,
     utils::{stream::copy_com_stream_to_vec, wchar},
@@ -16,6 +16,10 @@ use windows::{
 };
 
 /// Represents a print ticket builder, which can be used to build a print ticket.
+///
+/// The builder starts from the driver's default print ticket, obtained with
+/// [`PrintTicket::default_for`]. If that is not available, it falls back to
+/// [`PrintTicket::default`].
 pub struct PrintTicketBuilder {
     xml: Vec<u8>,
     provider: HPTPROVIDER,
@@ -41,22 +45,23 @@ pub enum PrintTicketBuilderError {
 impl PrintTicketBuilder {
     /// Create a new print ticket builder for the given printer device.
     pub fn new(device: &PrinterDevice) -> Result<Self, PrintTicketBuilderError> {
+        let xml = PrintTicket::default_for(device)
+            .unwrap_or_default()
+            .into_xml();
         let provider = unsafe {
             PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1)
                 .map_err(PrintTicketBuilderError::OpenProviderFailed)?
         };
-        Ok(Self {
-            xml: DEFAULT_PRINT_TICKET_XML.into(),
-            provider,
-        })
+        Ok(Self { xml, provider })
     }
 
     /// Merge the given print ticket into the current print ticket.
     pub fn merge(&mut self, delta: impl Into<PrintTicket>) -> Result<(), PrintTicketBuilderError> {
+        let delta = delta.into();
         unsafe {
             let base = SHCreateMemStream(Some(self.xml.as_ref()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
-            let delta = SHCreateMemStream(Some(delta.into().get_xml()))
+            let delta = SHCreateMemStream(Some(delta.get_xml()))
                 .ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
             let result =
                 SHCreateMemStream(None).ok_or(PrintTicketBuilderError::StreamNotAllocated)?;
@@ -137,5 +142,30 @@ mod tests {
             result,
             Err(PrintTicketBuilderError::MergePrintTicketsFailed(..))
         ));
+    }
+
+    #[test]
+    fn first_merge_starts_from_the_driver_default_ticket() {
+        let device = null_device::thread_local();
+        let mut builder = PrintTicketBuilder::new(&device).unwrap();
+        builder.merge(PrintTicket::default()).unwrap();
+        let ticket = builder.build().unwrap();
+        let xml = String::from_utf8_lossy(ticket.get_xml());
+        assert!(
+            xml.contains("<psf:Feature "),
+            "the driver default ticket should contain at least one feature: {xml}"
+        );
+    }
+
+    #[test]
+    fn build_without_merge_starts_from_the_driver_default_ticket() {
+        let device = null_device::thread_local();
+        let builder = PrintTicketBuilder::new(&device).unwrap();
+        let ticket = builder.build().unwrap();
+        let xml = String::from_utf8_lossy(ticket.get_xml());
+        assert!(
+            xml.contains("<psf:Feature "),
+            "an empty build should return the driver default ticket: {xml}"
+        );
     }
 }
