@@ -6,18 +6,30 @@
 //! # Examples
 //! ## Print a file
 //! For a simple example presenting how to print a file:
-//! - Filter for the device you want to use.
+//! - Get the device you want to use.
 //! - Wrap the printer device with a printer.
 //! - Send a file to the printer.
 //!
-//! First, get all printer devices via `PrinterDevice::all()` and filter for the device you want to use.
+//! First, get the printer device you want to use: [`printer::PrinterDevice::by_os_name`] fetches
+//! a device by its OS name, [`printer::PrinterDevice::user_default`] fetches the user's default
+//! printer, and [`printer::PrinterDevice::all`] enumerates all of them.
 //!
 //! ```rust
 //! use winprint::printer::PrinterDevice;
 //!
 //! fn get_my_device() -> PrinterDevice {
-//!     let printers = PrinterDevice::all().expect("Failed to get printers");
-//!     printers
+//!     PrinterDevice::by_os_name("My Printer").expect("My Printer not found")
+//! }
+//!
+//! fn get_my_default_device() -> PrinterDevice {
+//!     PrinterDevice::user_default()
+//!         .expect("Failed to find the printer")
+//!         .expect("No default printer")
+//! }
+//!
+//! fn get_my_device_by_filter() -> PrinterDevice {
+//!     PrinterDevice::all()
+//!         .expect("Failed to get printers")
 //!         .into_iter()
 //!         .find(|x| x.name() == "My Printer")
 //!         .expect("My Printer not found")
