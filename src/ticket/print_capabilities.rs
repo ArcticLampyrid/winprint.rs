@@ -4,8 +4,10 @@ use super::{
         ParameterInit, PrintCapabilitiesDocument, PrintFeature, PrintFeatureOption, WithProperties,
         NS_PSF, NS_PSK,
     },
-    Copies, JobDuplex, PageMediaSize, PageOrientation, PageOutputColor, PageResolution,
-    PrintTicket, StaticFeaturePathOptionPack,
+    Collation, Copies, JobDuplex, JobPageOrder, JobStapling, PageBorderless,
+    PageDeviceFontSubstitution, PageMediaSize, PageMediaType, PageOrientation, PageOutputColor,
+    PageOutputQuality, PagePhotoPrintingIntent, PageResolution, PageTrueTypeFontMode, PrintTicket,
+    StaticFeaturePathOptionPack,
 };
 use crate::{
     printer::PrinterDevice,
@@ -176,6 +178,22 @@ impl PrintCapabilities {
         PageMediaSize::list(self)
     }
 
+    /// Get all supported page media types.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageMediaType` keyword.
+    pub fn page_media_types(&self) -> impl Iterator<Item = PageMediaType> + '_ {
+        PageMediaType::list(self)
+    }
+
+    /// Get all supported page borderless options.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageBorderless` keyword.
+    pub fn page_borderless_options(&self) -> impl Iterator<Item = PageBorderless> + '_ {
+        PageBorderless::list(self)
+    }
+
     /// Get all supported page orientations.
     pub fn page_orientations(&self) -> impl Iterator<Item = PageOrientation> + '_ {
         PageOrientation::list(self)
@@ -194,9 +212,69 @@ impl PrintCapabilities {
         PageOutputColor::list(self)
     }
 
+    /// Get all supported page output qualities.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageOutputQuality` keyword.
+    pub fn page_output_qualities(&self) -> impl Iterator<Item = PageOutputQuality> + '_ {
+        PageOutputQuality::list(self)
+    }
+
     /// Get all supported page resolutions.
     pub fn page_resolutions(&self) -> impl Iterator<Item = PageResolution> + '_ {
         PageResolution::list(self)
+    }
+
+    /// Get all supported collations.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `DocumentCollate` keyword, not the
+    /// `JobCollateAllDocuments` keyword.
+    pub fn collations(&self) -> impl Iterator<Item = Collation> + '_ {
+        Collation::list(self)
+    }
+
+    /// Get all supported device font substitutions.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageDeviceFontSubstitution` keyword.
+    pub fn device_font_substitutions(
+        &self,
+    ) -> impl Iterator<Item = PageDeviceFontSubstitution> + '_ {
+        PageDeviceFontSubstitution::list(self)
+    }
+
+    /// Get all supported TrueType font modes.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageTrueTypeFontMode` keyword.
+    pub fn true_type_font_modes(&self) -> impl Iterator<Item = PageTrueTypeFontMode> + '_ {
+        PageTrueTypeFontMode::list(self)
+    }
+
+    /// Get all supported page orders.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `JobPageOrder` keyword.
+    pub fn page_orders(&self) -> impl Iterator<Item = JobPageOrder> + '_ {
+        JobPageOrder::list(self)
+    }
+
+    /// Get all supported photo printing intents.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PagePhotoPrintingIntent` keyword.
+    pub fn photo_printing_intents(&self) -> impl Iterator<Item = PagePhotoPrintingIntent> + '_ {
+        PagePhotoPrintingIntent::list(self)
+    }
+
+    /// Get all supported staplings.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `JobStapleAllDocuments` keyword, not the
+    /// `DocumentStaple` keyword.
+    pub fn staplings(&self) -> impl Iterator<Item = JobStapling> + '_ {
+        JobStapling::list(self)
     }
 
     /// Get the maximum number of copies that a printer can print. Return `None` if the device does not report a maximum.
@@ -260,9 +338,56 @@ mod tests {
             define_feature_option_pack,
             document::{OwnedName, ParameterInit, PrintFeatureOption, NS_PSK},
             test_helpers::{assert_converted, capabilities_from_xml, capabilities_with_features},
-            StaticFeaturePathOptionPack,
+            FeatureOptionPackWithPredefined, PredefinedCollation, PredefinedDeviceFontSubstitution,
+            PredefinedPageBorderless, PredefinedPageMediaType, PredefinedPageOrder,
+            PredefinedPageOutputQuality, PredefinedPhotoPrintingIntent, PredefinedStapling,
+            PredefinedTrueTypeFontMode, StaticFeaturePathOptionPack,
         },
     };
+
+    const NEW_KEYWORDS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<psf:PrintCapabilities
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1"
+    xmlns:ns0000="http://schemas.microsoft.com/windows/printing/oemdriverpt/Test"
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:Feature name="psk:DocumentCollate">
+        <psf:Option name="psk:Collated" />
+        <psf:Option name="psk:Uncollated" />
+    </psf:Feature>
+    <psf:Feature name="psk:PageDeviceFontSubstitution">
+        <psf:Option name="psk:On" />
+        <psf:Option name="psk:Off" />
+    </psf:Feature>
+    <psf:Feature name="psk:PageMediaType">
+        <psf:Option name="psk:Plain" />
+        <psf:Option name="psk:PhotographicGlossy" />
+    </psf:Feature>
+    <psf:Feature name="psk:PageBorderless">
+        <psf:Option name="psk:None" />
+        <psf:Option name="psk:Borderless" />
+    </psf:Feature>
+    <psf:Feature name="psk:PageOutputQuality">
+        <psf:Option name="psk:Draft" />
+        <psf:Option name="psk:High" />
+    </psf:Feature>
+    <psf:Feature name="psk:PageTrueTypeFontMode">
+        <psf:Option name="psk:Automatic" />
+        <psf:Option name="psk:DownloadAsOutlineFont" />
+    </psf:Feature>
+    <psf:Feature name="psk:JobPageOrder">
+        <psf:Option name="psk:Standard" />
+        <psf:Option name="psk:Reverse" />
+    </psf:Feature>
+    <psf:Feature name="psk:JobStapleAllDocuments">
+        <psf:Option name="psk:None" />
+        <psf:Option name="psk:StapleTopLeft" />
+    </psf:Feature>
+    <psf:Feature name="psk:PagePhotoPrintingIntent">
+        <psf:Option name="psk:PhotoBest" />
+    </psf:Feature>
+</psf:PrintCapabilities>"#;
 
     #[test]
     fn test_fetch_xml() {
@@ -274,6 +399,134 @@ mod tests {
     fn test_fetch_xml_and_parse() {
         let device = null_device::thread_local();
         PrintCapabilities::fetch(&device).unwrap();
+    }
+
+    #[test]
+    fn list_new_capabilities() {
+        let capabilities = capabilities_from_xml(NEW_KEYWORDS_XML);
+
+        assert_eq!(
+            capabilities
+                .collations()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedCollation::Collated,
+                PredefinedCollation::Uncollated
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .device_font_substitutions()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedDeviceFontSubstitution::On,
+                PredefinedDeviceFontSubstitution::Off
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .page_media_types()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedPageMediaType::Plain,
+                PredefinedPageMediaType::PhotographicGlossy
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .page_borderless_options()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedPageBorderless::None,
+                PredefinedPageBorderless::Borderless
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .page_output_qualities()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedPageOutputQuality::Draft,
+                PredefinedPageOutputQuality::High
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .true_type_font_modes()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedTrueTypeFontMode::Automatic,
+                PredefinedTrueTypeFontMode::DownloadAsOutlineFont
+            ]
+        );
+        assert_eq!(
+            capabilities
+                .page_orders()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![PredefinedPageOrder::Standard, PredefinedPageOrder::Reverse]
+        );
+        assert_eq!(
+            capabilities
+                .staplings()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![PredefinedStapling::None, PredefinedStapling::StapleTopLeft]
+        );
+        assert_eq!(
+            capabilities
+                .photo_printing_intents()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![PredefinedPhotoPrintingIntent::PhotoBest]
+        );
+    }
+
+    #[test]
+    fn new_packs_can_be_converted_into_print_tickets() {
+        let capabilities = capabilities_from_xml(NEW_KEYWORDS_XML);
+        capabilities.collations().for_each(assert_converted);
+        capabilities
+            .device_font_substitutions()
+            .for_each(assert_converted);
+        capabilities.page_media_types().for_each(assert_converted);
+        capabilities
+            .page_borderless_options()
+            .for_each(assert_converted);
+        capabilities
+            .page_output_qualities()
+            .for_each(assert_converted);
+        capabilities
+            .true_type_font_modes()
+            .for_each(assert_converted);
+        capabilities.page_orders().for_each(assert_converted);
+        capabilities.staplings().for_each(assert_converted);
+        capabilities
+            .photo_printing_intents()
+            .for_each(assert_converted);
+    }
+
+    #[test]
+    fn list_capabilities_from_driver_output() {
+        let capabilities =
+            capabilities_from_xml(include_bytes!("../../test_data/print_capabilities.xml"));
+
+        assert_eq!(
+            capabilities
+                .collations()
+                .filter_map(|x| x.as_predefined_name())
+                .collect::<Vec<_>>(),
+            vec![
+                PredefinedCollation::Collated,
+                PredefinedCollation::Uncollated
+            ]
+        );
     }
 
     #[test]
