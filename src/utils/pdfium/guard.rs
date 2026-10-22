@@ -2,6 +2,7 @@ use crate::bindings::pdfium::*;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::OnceLock;
+use std::sync::PoisonError;
 
 pub struct PdfiumGuard {
     inited: bool,
@@ -33,7 +34,9 @@ impl PdfiumGuard {
         PDFIUM_GUARD
             .get_or_init(|| Mutex::new(PdfiumGuard::new()))
             .lock()
-            .unwrap()
+            // A panic while printing, such as one in a progress callback, unwinds through guards
+            // that close what it opened, so the library stays usable.
+            .unwrap_or_else(PoisonError::into_inner)
     }
     pub fn guard() -> MutexGuard<'static, PdfiumGuard> {
         let mut x = Self::get();
