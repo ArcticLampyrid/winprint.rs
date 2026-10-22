@@ -309,4 +309,15 @@ mod tests {
             &path,
         );
     }
+
+    #[test]
+    fn failure_leaves_no_job() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_failure_leaves_no_job(
+            &PdfiumPrinter::new(device.clone()),
+            &device,
+            &path,
+        );
+    }
 }

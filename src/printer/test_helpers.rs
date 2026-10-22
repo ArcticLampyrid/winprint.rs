@@ -2,6 +2,7 @@ use super::{FilePrinter, PrintOutcome, PrintProgress, PrinterDevice};
 use crate::ticket::PrintTicket;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -139,4 +140,24 @@ where
     });
     eprintln!("{reports:?} -> {outcome:?}");
     outcome.unwrap();
+}
+
+/// A job that fails partway through is removed from the print queue.
+///
+/// The failure is a panic in the progress callback after the first page: unwinding leaves the
+/// printer just as returning an error does.
+pub fn assert_failure_leaves_no_job<P>(printer: &P, device: &PrinterDevice, path: &Path)
+where
+    P: FilePrinter<Options = PrintTicket>,
+{
+    // A paused printer keeps submitted jobs, so only a canceled job leaves the queue.
+    pause_printer(device);
+    let failed = panic::catch_unwind(AssertUnwindSafe(|| {
+        let _ = printer.print_with_progress(path, Default::default(), &mut |progress| {
+            assert_eq!(progress.current(), 0, "fail after the first page");
+            ControlFlow::Continue(())
+        });
+    }));
+    assert!(failed.is_err());
+    assert_queue_drains(device);
 }

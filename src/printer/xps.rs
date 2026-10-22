@@ -103,7 +103,11 @@ impl FilePrinter for XpsPrinter {
                 ptr::addr_of_mut!(print_ticket_stream),
             )
             .map_err(XpsPrinterError::FailedToStartJob)?;
-            let job = job.ok_or(XpsPrinterError::StreamNotAvailable)?;
+            // Releasing an unfinished job submits it, so cancel it on any early return (or panic)
+            // until it ends; otherwise, the part written so far would print.
+            let job = scopeguard::guard(job.ok_or(XpsPrinterError::StreamNotAvailable)?, |job| {
+                let _ = job.Cancel();
+            });
             let print_ticket_stream =
                 print_ticket_stream.ok_or(XpsPrinterError::StreamNotAvailable)?;
             let print_ticket = options.get_xml();
@@ -126,7 +130,6 @@ impl FilePrinter for XpsPrinter {
             let page_count =
                 page_count(&xps_package).map_err(XpsPrinterError::FailedToWriteDocument)?;
             if on_progress(&PrintProgress::new(0, page_count)).is_break() {
-                let _ = job.Cancel();
                 return Ok(PrintOutcome::Canceled);
             }
             xps_package
@@ -135,12 +138,14 @@ impl FilePrinter for XpsPrinter {
             document_stream
                 .Close()
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
-            wait_for_job(
+            let outcome = wait_for_job(
                 &job,
                 [progress_event, completion_event],
                 page_count,
                 on_progress,
-            )
+            )?;
+            let _ = scopeguard::ScopeGuard::into_inner(job);
+            Ok(outcome)
         }
     }
 }
@@ -232,6 +237,17 @@ mod tests {
         let device = null_device::thread_local();
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
         test_helpers::assert_observes_external_cancel(
+            &XpsPrinter::new(device.clone()),
+            &device,
+            &path,
+        );
+    }
+
+    #[test]
+    fn failure_leaves_no_job() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        test_helpers::assert_failure_leaves_no_job(
             &XpsPrinter::new(device.clone()),
             &device,
             &path,

@@ -88,6 +88,8 @@ pub struct DxgiPrintContext {
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
     completion_waiter: PrintCompletionWaiter,
+    /// Whether the job has ended, so that dropping the context leaves it alone.
+    job_ended: bool,
     pub dpi: (u32, u32),
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
@@ -230,6 +232,7 @@ impl DxgiPrintContext {
                 document_target,
                 print_control,
                 completion_waiter,
+                job_ended: false,
                 dpi,
                 _com_initializer,
             })
@@ -274,16 +277,34 @@ impl DxgiPrintContext {
     }
 
     /// Close the print context and wait until the print job has been submitted.
-    pub fn close_and_wait(self) -> Result<PrintOutcome, DxgiPrintContextError> {
+    pub fn close_and_wait(mut self) -> Result<PrintOutcome, DxgiPrintContextError> {
         let closed = unsafe { self.print_control.Close() };
         // A job that has ended, such as one canceled outside this process, may fail to close.
-        match (closed, self.completion_waiter.poll()) {
+        let end = match (closed, self.completion_waiter.poll()) {
             (Err(error), None) if deleted_from_queue(error.code()) => Ok(PrintOutcome::Canceled),
-            (Err(error), None) => Err(DxgiPrintContextError::FailedToClosePrintControl(error)),
+            (Err(error), None) => {
+                return Err(DxgiPrintContextError::FailedToClosePrintControl(error))
+            }
             _ => self
                 .completion_waiter
                 .wait()
                 .map_err(DxgiPrintContextError::JobFailed),
+        };
+        self.job_ended = true;
+        end
+    }
+}
+
+impl Drop for DxgiPrintContext {
+    /// Cancel the job unless it has ended.
+    ///
+    /// Releasing an unfinished job submits it, so an error or a panic while adding pages would
+    /// otherwise print the pages added so far.
+    fn drop(&mut self) {
+        if !self.job_ended {
+            unsafe {
+                let _ = self.document_target.Cancel();
+            }
         }
     }
 }
