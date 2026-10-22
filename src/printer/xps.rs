@@ -1,11 +1,13 @@
 use crate::printer::pipeline_outcome;
 use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
+use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
 use scopeguard::defer;
 use std::mem::MaybeUninit;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::ptr;
 use thiserror::Error;
@@ -62,15 +64,21 @@ impl XpsPrinter {
 impl FilePrinter for XpsPrinter {
     type Options = PrintTicket;
     type Error = XpsPrinterError;
-    fn print(
+    fn print_with_progress(
         &self,
         path: &Path,
         options: PrintTicket,
+        on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, XpsPrinterError> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             defer! {
                 CoUninitialize();
+            }
+            let progress_event = CreateEventW(None, false, false, None)
+                .map_err(XpsPrinterError::FailedToCreateEvent)?;
+            defer! {
+                let _ = CloseHandle(progress_event);
             }
             let completion_event = CreateEventW(None, true, false, None)
                 .map_err(XpsPrinterError::FailedToCreateEvent)?;
@@ -87,7 +95,7 @@ impl FilePrinter for XpsPrinter {
                 PCWSTR(wchar::to_wide_chars(self.printer.os_name()).as_ptr()),
                 PCWSTR(wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref())).as_ptr()),
                 None,
-                HANDLE::default(),
+                progress_event,
                 completion_event,
                 &[],
                 ptr::addr_of_mut!(job),
@@ -115,31 +123,70 @@ impl FilePrinter for XpsPrinter {
             let xps_package = xps_factory
                 .CreatePackageFromFile(PCWSTR(wchar::to_wide_chars(path).as_ptr()), false)
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
+            let page_count =
+                page_count(&xps_package).map_err(XpsPrinterError::FailedToWriteDocument)?;
+            if on_progress(&PrintProgress::new(0, page_count)).is_break() {
+                let _ = job.Cancel();
+                return Ok(PrintOutcome::Canceled);
+            }
             xps_package
                 .WriteToStream(&document_stream, false)
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
             document_stream
                 .Close()
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
-            wait_for_job(&job, completion_event)
+            wait_for_job(
+                &job,
+                [progress_event, completion_event],
+                page_count,
+                on_progress,
+            )
         }
     }
 }
 
-/// Wait until `job` ends.
+/// The number of pages in all documents of `package`.
+unsafe fn page_count(package: &IXpsOMPackage) -> windows::core::Result<u32> {
+    let documents = package.GetDocumentSequence()?.GetDocuments()?;
+    (0..documents.GetCount()?).try_fold(0, |pages, index| {
+        Ok(pages + documents.GetAt(index)?.GetPageReferences()?.GetCount()?)
+    })
+}
+
+/// Wait until `job` ends, reporting the pages it has processed out of `page_count` to
+/// `on_progress` until it asks to cancel.
+///
+/// The job may still complete after a cancel request, so the outcome comes from the job.
 unsafe fn wait_for_job(
     job: &IXpsPrintJob,
-    completion_event: HANDLE,
+    events: [HANDLE; 2],
+    page_count: u32,
+    on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
 ) -> Result<PrintOutcome, XpsPrinterError> {
+    let mut cancel_requested = false;
     loop {
         let mut status = XPS_JOB_STATUS::default();
         job.GetJobStatus(&mut status)
             .map_err(XpsPrinterError::FailedToWaitForJob)?;
         let completion = PrintDocumentPackageCompletion(status.completion.0);
-        if let Some(end) = pipeline_outcome(completion, status.jobStatus) {
-            return end.map_err(XpsPrinterError::JobFailed);
+        match pipeline_outcome(completion, status.jobStatus) {
+            Some(Ok(PrintOutcome::Completed)) => {
+                // Progress events coalesce, so the last pages may only show up as the job
+                // completes. Report them, though it is too late to cancel.
+                if !cancel_requested {
+                    let _ = on_progress(&PrintProgress::new(page_count, page_count));
+                }
+                return Ok(PrintOutcome::Completed);
+            }
+            Some(end) => return end.map_err(XpsPrinterError::JobFailed),
+            None => {}
         }
-        if WaitForSingleObject(completion_event, INFINITE) == WAIT_FAILED {
+        let processed = PrintProgress::new(status.currentPageTotal as u32, page_count);
+        if !cancel_requested && on_progress(&processed).is_break() {
+            cancel_requested = true;
+            let _ = job.Cancel();
+        }
+        if WaitForMultipleObjects(&events, false, INFINITE) == WAIT_FAILED {
             return Err(XpsPrinterError::FailedToWaitForJob(
                 windows::core::Error::from_thread(),
             ));
@@ -151,7 +198,7 @@ unsafe fn wait_for_job(
 mod tests {
     use super::XpsPrinter;
     use crate::{
-        printer::{FilePrinter, PrintOutcome},
+        printer::{test_helpers, FilePrinter, PrintOutcome},
         test_utils::null_device,
     };
     use std::path::Path;
@@ -164,6 +211,30 @@ mod tests {
         assert_eq!(
             xps.print(path.as_path(), Default::default()).unwrap(),
             PrintOutcome::Completed
+        );
+    }
+
+    #[test]
+    fn reports_progress() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        test_helpers::assert_reports_progress(&XpsPrinter::new(null_device::thread_local()), &path);
+    }
+
+    #[test]
+    fn cancels_on_request() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        test_helpers::assert_cancels_on_request(&XpsPrinter::new(device.clone()), &device, &path);
+    }
+
+    #[test]
+    fn observes_external_cancel() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        test_helpers::assert_observes_external_cancel(
+            &XpsPrinter::new(device.clone()),
+            &device,
+            &path,
         );
     }
 }

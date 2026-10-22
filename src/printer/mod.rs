@@ -5,6 +5,9 @@ mod image;
 mod outcome;
 #[cfg(feature = "pdfium")]
 mod pdfium;
+mod progress;
+#[cfg(test)]
+mod test_helpers;
 mod win_pdf;
 mod xps;
 
@@ -16,5 +19,6 @@ pub use outcome::PrintOutcome;
 pub(crate) use outcome::{deleted_from_queue, pipeline_outcome};
 #[cfg(feature = "pdfium")]
 pub use pdfium::{PdfiumPrinter, PdfiumPrinterError};
+pub use progress::PrintProgress;
 pub use win_pdf::{WinPdfPrinter, WinPdfPrinterError};
 pub use xps::{XpsPrinter, XpsPrinterError};

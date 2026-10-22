@@ -2,6 +2,7 @@ use super::DxgiPrintContext;
 use super::DxgiPrintContextError;
 use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
+use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use std::ops::ControlFlow;
@@ -85,10 +86,11 @@ impl WinPdfPrinter {
 impl FilePrinter for WinPdfPrinter {
     type Options = PrintTicket;
     type Error = WinPdfPrinterError;
-    fn print(
+    fn print_with_progress(
         &self,
         path: &Path,
         options: PrintTicket,
+        on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, WinPdfPrinterError> {
         let context = DxgiPrintContext::new(
             &self.printer,
@@ -119,6 +121,12 @@ impl FilePrinter for WinPdfPrinter {
             let page_count = pdf_document
                 .PageCount()
                 .map_err(WinPdfPrinterError::RenderError)?;
+            let mut checkpoint = |pages_added| {
+                context.checkpoint(on_progress(&PrintProgress::new(pages_added, page_count)))
+            };
+            if let ControlFlow::Break(outcome) = checkpoint(0)? {
+                return Ok(outcome);
+            }
             for i in 0..page_count {
                 let pdf_page = pdf_document
                     .GetPage(i)
@@ -171,6 +179,9 @@ impl FilePrinter for WinPdfPrinter {
                 {
                     return Ok(outcome);
                 }
+                if let ControlFlow::Break(outcome) = checkpoint(i + 1)? {
+                    return Ok(outcome);
+                }
             }
         }
         Ok(context.close_and_wait()?)
@@ -191,7 +202,7 @@ fn scaled(dips: f32, scale: f32) -> Result<u32, WinPdfPrinterError> {
 mod tests {
     use super::{scaled, WinPdfPrinter};
     use crate::{
-        printer::{FilePrinter, PrintOutcome},
+        printer::{test_helpers, FilePrinter, PrintOutcome},
         test_utils::null_device,
     };
     use std::path::Path;
@@ -243,5 +254,36 @@ mod tests {
         assert!(scaled(0.0, 1.0).is_err());
         assert!(scaled(f32::NAN, 1.0).is_err());
         assert!(scaled(1e12, 100.0).is_err());
+    }
+
+    #[test]
+    fn reports_progress() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_reports_progress(
+            &WinPdfPrinter::new(null_device::thread_local()),
+            &path,
+        );
+    }
+
+    #[test]
+    fn cancels_on_request() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_cancels_on_request(
+            &WinPdfPrinter::new(device.clone()),
+            &device,
+            &path,
+        );
+    }
+
+    #[test]
+    fn observes_external_cancel() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_observes_external_cancel(
+            &WinPdfPrinter::new(device.clone()),
+            &device,
+            &path,
+        );
     }
 }

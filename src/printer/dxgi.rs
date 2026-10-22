@@ -250,6 +250,29 @@ impl DxgiPrintContext {
         }
     }
 
+    /// Decide whether to go on submitting pages.
+    ///
+    /// Cancels the job if `requested` breaks, as a progress callback does to cancel it.
+    /// Otherwise, checks whether the job has already ended, for example canceled outside this
+    /// process. Breaks with the outcome once the job is over.
+    pub fn checkpoint(
+        &self,
+        requested: ControlFlow<()>,
+    ) -> Result<ControlFlow<PrintOutcome>, DxgiPrintContextError> {
+        if requested.is_break() {
+            unsafe {
+                let _ = self.document_target.Cancel();
+            }
+            return Ok(ControlFlow::Break(PrintOutcome::Canceled));
+        }
+        self.completion_waiter
+            .poll()
+            .map_or(Ok(ControlFlow::Continue(())), |end| {
+                end.map(ControlFlow::Break)
+                    .map_err(DxgiPrintContextError::JobFailed)
+            })
+    }
+
     /// Close the print context and wait until the print job has been submitted.
     pub fn close_and_wait(self) -> Result<PrintOutcome, DxgiPrintContextError> {
         let closed = unsafe { self.print_control.Close() };

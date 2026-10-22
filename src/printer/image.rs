@@ -2,6 +2,7 @@ use super::DxgiPrintContext;
 use super::DxgiPrintContextError;
 use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
+use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
@@ -50,10 +51,11 @@ impl ImagePrinter {
 impl FilePrinter for ImagePrinter {
     type Options = PrintTicket;
     type Error = ImagePrinterError;
-    fn print(
+    fn print_with_progress(
         &self,
         path: &Path,
         options: PrintTicket,
+        on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, ImagePrinterError> {
         let context = DxgiPrintContext::new(
             &self.printer,
@@ -77,6 +79,12 @@ impl FilePrinter for ImagePrinter {
             let page_count = image_decoder
                 .GetFrameCount()
                 .map_err(ImagePrinterError::RenderError)?;
+            let mut checkpoint = |pages_added| {
+                context.checkpoint(on_progress(&PrintProgress::new(pages_added, page_count)))
+            };
+            if let ControlFlow::Break(outcome) = checkpoint(0)? {
+                return Ok(outcome);
+            }
             for i in 0..page_count {
                 let frame = image_decoder
                     .GetFrame(i)
@@ -146,6 +154,9 @@ impl FilePrinter for ImagePrinter {
                 {
                     return Ok(outcome);
                 }
+                if let ControlFlow::Break(outcome) = checkpoint(i + 1)? {
+                    return Ok(outcome);
+                }
             }
         }
         Ok(context.close_and_wait()?)
@@ -156,7 +167,7 @@ impl FilePrinter for ImagePrinter {
 mod tests {
     use super::ImagePrinter;
     use crate::{
-        printer::{FilePrinter, PrintOutcome},
+        printer::{test_helpers, FilePrinter, PrintOutcome},
         test_utils::null_device,
     };
     use std::path::Path;
@@ -169,6 +180,33 @@ mod tests {
         assert_eq!(
             image.print(path.as_path(), Default::default()).unwrap(),
             PrintOutcome::Completed
+        );
+    }
+
+    #[test]
+    fn reports_progress() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.tiff");
+        test_helpers::assert_reports_progress(
+            &ImagePrinter::new(null_device::thread_local()),
+            &path,
+        );
+    }
+
+    #[test]
+    fn cancels_on_request() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.tiff");
+        test_helpers::assert_cancels_on_request(&ImagePrinter::new(device.clone()), &device, &path);
+    }
+
+    #[test]
+    fn observes_external_cancel() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.tiff");
+        test_helpers::assert_observes_external_cancel(
+            &ImagePrinter::new(device.clone()),
+            &device,
+            &path,
         );
     }
 }

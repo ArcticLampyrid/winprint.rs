@@ -2,6 +2,7 @@ use crate::bindings::pdfium::*;
 use crate::printer::deleted_from_queue;
 use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
+use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
@@ -11,6 +12,7 @@ use crate::utils::pdfium::PdfiumGuard;
 use crate::utils::wchar;
 use scopeguard::defer;
 use std::cell::Cell;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::ptr;
 use std::{fs::File, mem};
@@ -88,10 +90,11 @@ impl FilePrinter for PdfiumPrinter {
     type Options = PrintTicket;
     type Error = PdfiumPrinterError;
 
-    fn print(
+    fn print_with_progress(
         &self,
         path: &Path,
         options: PrintTicket,
+        on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, PdfiumPrinterError> {
         unsafe {
             let dev_mode = options
@@ -161,6 +164,13 @@ impl FilePrinter for PdfiumPrinter {
             let get_attr =
                 |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(Some(hdc_print), kind) };
             let page_count = FPDF_GetPageCount(document);
+            // Leaving early aborts the document, through the guard above.
+            let mut cancel_requested = |pages_ended: i32| {
+                on_progress(&PrintProgress::new(pages_ended as u32, page_count as u32)).is_break()
+            };
+            if cancel_requested(0) {
+                return Ok(PrintOutcome::Canceled);
+            }
             for page_index in 0..page_count {
                 let page = FPDF_LoadPage(document, page_index);
                 defer! {
@@ -226,6 +236,9 @@ impl FilePrinter for PdfiumPrinter {
                 if end_page_ret <= 0 {
                     return Err(PdfiumPrinterError::EndPageFailed(page_index, end_page_ret));
                 }
+                if cancel_requested(page_index + 1) {
+                    return Ok(PrintOutcome::Canceled);
+                }
             }
 
             let end_doc_ret = EndDoc(hdc_print);
@@ -250,7 +263,7 @@ fn job_deleted_from_queue() -> bool {
 mod tests {
     use super::PdfiumPrinter;
     use crate::{
-        printer::{FilePrinter, PrintOutcome},
+        printer::{test_helpers, FilePrinter, PrintOutcome},
         test_utils::null_device,
     };
     use std::path::Path;
@@ -263,6 +276,37 @@ mod tests {
         assert_eq!(
             pdf.print(path.as_path(), Default::default()).unwrap(),
             PrintOutcome::Completed
+        );
+    }
+
+    #[test]
+    fn reports_progress() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_reports_progress(
+            &PdfiumPrinter::new(null_device::thread_local()),
+            &path,
+        );
+    }
+
+    #[test]
+    fn cancels_on_request() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_cancels_on_request(
+            &PdfiumPrinter::new(device.clone()),
+            &device,
+            &path,
+        );
+    }
+
+    #[test]
+    fn observes_external_cancel() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_observes_external_cancel(
+            &PdfiumPrinter::new(device.clone()),
+            &device,
+            &path,
         );
     }
 }
