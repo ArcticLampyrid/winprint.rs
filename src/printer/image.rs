@@ -1,9 +1,11 @@
 use super::DxgiPrintContext;
 use super::DxgiPrintContextError;
 use crate::printer::FilePrinter;
+use crate::printer::PrintOutcome;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
+use std::ops::ControlFlow;
 use std::path::Path;
 use thiserror::Error;
 use windows::core::PCWSTR;
@@ -52,14 +54,13 @@ impl FilePrinter for ImagePrinter {
         &self,
         path: &Path,
         options: PrintTicket,
-    ) -> std::result::Result<(), ImagePrinterError> {
+    ) -> std::result::Result<PrintOutcome, ImagePrinterError> {
         let context = DxgiPrintContext::new(
             &self.printer,
             &options,
             path.file_name().unwrap_or(path.as_ref()),
         )?;
         let wic_factory = &context.wic_factory;
-        let print_control = &context.print_control;
         let d2d_context = &context.d2d_context;
         unsafe {
             let absolute_path =
@@ -139,20 +140,25 @@ impl FilePrinter for ImagePrinter {
                 command_list
                     .Close()
                     .map_err(ImagePrinterError::RenderError)?;
-                print_control
-                    .AddPage(&command_list, page_size, None, None, None)
-                    .map_err(ImagePrinterError::RenderError)?;
+                if let ControlFlow::Break(outcome) = context
+                    .add_page(&command_list, page_size)
+                    .map_err(ImagePrinterError::RenderError)?
+                {
+                    return Ok(outcome);
+                }
             }
         }
-        context.close_and_wait()?;
-        Ok(())
+        Ok(context.close_and_wait()?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::ImagePrinter;
-    use crate::{printer::FilePrinter, test_utils::null_device};
+    use crate::{
+        printer::{FilePrinter, PrintOutcome},
+        test_utils::null_device,
+    };
     use std::path::Path;
 
     #[test]
@@ -160,6 +166,9 @@ mod tests {
         let device = null_device::thread_local();
         let image = ImagePrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.tiff");
-        image.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            image.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 }

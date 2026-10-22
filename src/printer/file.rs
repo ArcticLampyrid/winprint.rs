@@ -1,3 +1,4 @@
+use crate::printer::PrintOutcome;
 use std::path::Path;
 
 /// A trait representing a printer that can print files.
@@ -7,5 +8,5 @@ pub trait FilePrinter {
     /// The error type for the printer.
     type Error;
     /// Print the file with the given options.
-    fn print(&self, path: &Path, options: Self::Options) -> std::result::Result<(), Self::Error>;
+    fn print(&self, path: &Path, options: Self::Options) -> Result<PrintOutcome, Self::Error>;
 }

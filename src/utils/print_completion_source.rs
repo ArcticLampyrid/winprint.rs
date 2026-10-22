@@ -1,22 +1,15 @@
+use crate::printer::{pipeline_outcome, PrintOutcome};
 use std::mem::ManuallyDrop;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use windows::core::w;
 use windows::core::BSTR;
-use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::E_INVALIDARG;
-use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Foundation::{
     DISP_E_BADPARAMCOUNT, DISP_E_EXCEPTION, DISP_E_MEMBERNOTFOUND, DISP_E_TYPEMISMATCH,
     DISP_E_UNKNOWNNAME,
 };
-use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Canceled;
-use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Completed;
-use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Failed;
 use windows::Win32::System::Com::DISPATCH_METHOD;
 use windows::Win32::System::Ole::DISPID_UNKNOWN;
-use windows::Win32::System::Threading::CreateEventW;
-use windows::Win32::System::Threading::SetEvent;
-use windows::Win32::System::Threading::WaitForSingleObject;
-use windows::Win32::System::Threading::INFINITE;
 use windows::Win32::System::Variant::{VARIANT, VT_BYREF};
 use windows::Win32::{
     Foundation::E_NOTIMPL,
@@ -28,38 +21,55 @@ use windows::Win32::{
 };
 use windows_implement::implement;
 
+type JobEnd = Result<PrintOutcome, windows::core::Error>;
+
+/// The end of a job, set once by the print pipeline from one of its threads.
+#[derive(Default)]
+struct JobEndSlot {
+    end: Mutex<Option<JobEnd>>,
+    ended: Condvar,
+}
+
 #[implement(IPrintDocumentPackageStatusEvent, IDispatch)]
 pub struct PrintCompletionSource {
-    event: HANDLE,
+    slot: Arc<JobEndSlot>,
 }
 
 impl PrintCompletionSource {
-    pub fn new() -> windows::core::Result<Self> {
-        let event = unsafe { CreateEventW(None, true, false, None)? };
-        Ok(Self { event })
+    pub fn new() -> Self {
+        Self {
+            slot: Default::default(),
+        }
     }
     pub fn waiter(&self) -> PrintCompletionWaiter {
-        PrintCompletionWaiter { event: self.event }
+        PrintCompletionWaiter {
+            slot: self.slot.clone(),
+        }
     }
 }
 
 pub struct PrintCompletionWaiter {
-    event: HANDLE,
+    slot: Arc<JobEndSlot>,
 }
 
 impl PrintCompletionWaiter {
-    pub fn wait(&self) {
-        unsafe {
-            let _ = WaitForSingleObject(self.event, INFINITE);
-        }
+    /// How the job ended, or `None` while it runs.
+    pub fn poll(&self) -> Option<JobEnd> {
+        self.slot
+            .end
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
-}
-
-impl Drop for PrintCompletionSource {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.event);
-        }
+    /// Block until the job ends.
+    pub fn wait(&self) -> JobEnd {
+        let end = self.slot.end.lock().unwrap_or_else(PoisonError::into_inner);
+        self.slot
+            .ended
+            .wait_while(end, |end| end.is_none())
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .expect("the job has ended")
     }
 }
 
@@ -68,18 +78,15 @@ impl IPrintDocumentPackageStatusEvent_Impl for PrintCompletionSource_Impl {
         &self,
         packagestatus: *const PrintDocumentPackageStatus,
     ) -> windows::core::Result<()> {
-        unsafe {
-            if packagestatus.is_null() {
-                return Err(windows::core::Error::from_hresult(E_INVALIDARG));
-            }
-            let status = &*packagestatus;
-            match status.Completion {
-                #[allow(non_upper_case_globals)]
-                PrintDocumentPackageCompletion_Canceled
-                | PrintDocumentPackageCompletion_Completed
-                | PrintDocumentPackageCompletion_Failed => SetEvent(self.event)?,
-                _ => {}
-            }
+        let status = unsafe { packagestatus.as_ref() }
+            .ok_or_else(|| windows::core::Error::from_hresult(E_INVALIDARG))?;
+        if let Some(job_end) = pipeline_outcome(status.Completion, status.PackageStatus) {
+            self.slot
+                .end
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get_or_insert(job_end);
+            self.slot.ended.notify_all();
         }
         Ok(())
     }

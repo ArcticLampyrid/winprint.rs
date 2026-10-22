@@ -1,5 +1,7 @@
 use crate::bindings::pdfium::*;
+use crate::printer::deleted_from_queue;
 use crate::printer::FilePrinter;
+use crate::printer::PrintOutcome;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
@@ -13,7 +15,8 @@ use std::path::Path;
 use std::ptr;
 use std::{fs::File, mem};
 use thiserror::Error;
-use windows::Win32::Foundation::RECT;
+use windows::core::HRESULT;
+use windows::Win32::Foundation::{GetLastError, RECT};
 use windows::{
     core::PCWSTR,
     Win32::{
@@ -89,7 +92,7 @@ impl FilePrinter for PdfiumPrinter {
         &self,
         path: &Path,
         options: PrintTicket,
-    ) -> std::result::Result<(), PdfiumPrinterError> {
+    ) -> std::result::Result<PrintOutcome, PdfiumPrinterError> {
         unsafe {
             let dev_mode = options
                 .to_dev_mode(&self.printer)
@@ -165,6 +168,9 @@ impl FilePrinter for PdfiumPrinter {
                 }
 
                 let start_page_ret = StartPage(hdc_print);
+                if start_page_ret <= 0 && job_deleted_from_queue() {
+                    return Ok(PrintOutcome::Canceled);
+                }
                 if start_page_ret <= 0 {
                     return Err(PdfiumPrinterError::StartPageFailed(
                         page_index,
@@ -213,6 +219,9 @@ impl FilePrinter for PdfiumPrinter {
                     .playback(hdc_print, target_rect)
                     .map_err(|_| PdfiumPrinterError::EmfPlaybackFailed(page_index));
                 let end_page_ret = EndPage(hdc_print);
+                if end_page_ret <= 0 && job_deleted_from_queue() {
+                    return Ok(PrintOutcome::Canceled);
+                }
                 page_result?;
                 if end_page_ret <= 0 {
                     return Err(PdfiumPrinterError::EndPageFailed(page_index, end_page_ret));
@@ -220,19 +229,30 @@ impl FilePrinter for PdfiumPrinter {
             }
 
             let end_doc_ret = EndDoc(hdc_print);
+            if end_doc_ret <= 0 && job_deleted_from_queue() {
+                return Ok(PrintOutcome::Canceled);
+            }
             if end_doc_ret <= 0 {
                 return Err(PdfiumPrinterError::EndDocFailed(end_doc_ret));
             }
             document_completed.set(true);
         }
-        Ok(())
+        Ok(PrintOutcome::Completed)
     }
+}
+
+/// Whether the last failed GDI print call failed because the job was deleted from the print queue.
+fn job_deleted_from_queue() -> bool {
+    deleted_from_queue(HRESULT::from_win32(unsafe { GetLastError() }.0))
 }
 
 #[cfg(test)]
 mod tests {
     use super::PdfiumPrinter;
-    use crate::{printer::FilePrinter, test_utils::null_device};
+    use crate::{
+        printer::{FilePrinter, PrintOutcome},
+        test_utils::null_device,
+    };
     use std::path::Path;
 
     #[test]
@@ -240,6 +260,9 @@ mod tests {
         let device = null_device::thread_local();
         let pdf = PdfiumPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
-        pdf.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            pdf.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 }

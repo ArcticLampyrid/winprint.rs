@@ -1,8 +1,10 @@
 use super::DxgiPrintContext;
 use super::DxgiPrintContextError;
 use crate::printer::FilePrinter;
+use crate::printer::PrintOutcome;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
+use std::ops::ControlFlow;
 use std::path::Path;
 use thiserror::Error;
 use windows::core::HSTRING;
@@ -87,14 +89,13 @@ impl FilePrinter for WinPdfPrinter {
         &self,
         path: &Path,
         options: PrintTicket,
-    ) -> std::result::Result<(), WinPdfPrinterError> {
+    ) -> std::result::Result<PrintOutcome, WinPdfPrinterError> {
         let context = DxgiPrintContext::new(
             &self.printer,
             &options,
             path.file_name().unwrap_or(path.as_ref()),
         )?;
         let dxgi_device = &context.dxgi_device;
-        let print_control = &context.print_control;
         let d2d_context = &context.d2d_context;
         let render_dpi = self.override_render_dpi.unwrap_or(context.dpi);
         let scale = (
@@ -164,13 +165,15 @@ impl FilePrinter for WinPdfPrinter {
                     width: pdf_size.Width as f32,
                     height: pdf_size.Height as f32,
                 };
-                print_control
-                    .AddPage(&command_list, dx_size, None, None, None)
-                    .map_err(at_resolution)?;
+                if let ControlFlow::Break(outcome) = context
+                    .add_page(&command_list, dx_size)
+                    .map_err(at_resolution)?
+                {
+                    return Ok(outcome);
+                }
             }
         }
-        context.close_and_wait()?;
-        Ok(())
+        Ok(context.close_and_wait()?)
     }
 }
 
@@ -187,7 +190,10 @@ fn scaled(dips: f32, scale: f32) -> Result<u32, WinPdfPrinterError> {
 #[cfg(test)]
 mod tests {
     use super::{scaled, WinPdfPrinter};
-    use crate::{printer::FilePrinter, test_utils::null_device};
+    use crate::{
+        printer::{FilePrinter, PrintOutcome},
+        test_utils::null_device,
+    };
     use std::path::Path;
 
     #[test]
@@ -195,7 +201,10 @@ mod tests {
         let device = null_device::thread_local();
         let pdf = WinPdfPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
-        pdf.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            pdf.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 
     /// `Windows.Data.Pdf` rasterizes Type 3 glyphs on WinRT thread pool workers, all drawing
@@ -206,7 +215,10 @@ mod tests {
         let device = null_device::thread_local();
         let pdf = WinPdfPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/type3_glyphs.pdf");
-        pdf.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            pdf.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 
     /// A4 at 1600 dpi is 13229 x 18709 px, taller than the 16384 texels Direct3D 11 allows a
@@ -218,7 +230,10 @@ mod tests {
         let mut pdf = WinPdfPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
         pdf.override_render_dpi(1600, 1600);
-        pdf.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            pdf.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 
     #[test]

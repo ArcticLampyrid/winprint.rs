@@ -1,3 +1,5 @@
+use crate::printer::deleted_from_queue;
+use crate::printer::PrintOutcome;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
@@ -7,13 +9,16 @@ use crate::utils::print_completion_source::PrintCompletionWaiter;
 use crate::utils::wchar;
 use std::cmp::max;
 use std::ffi::OsStr;
+use std::ops::ControlFlow;
 use std::ptr;
 use thiserror::Error;
 use windows::core::Interface;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::E_UNEXPECTED;
 use windows::Win32::Foundation::HMODULE;
+use windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_F;
 use windows::Win32::Graphics::Direct2D::D2D1CreateFactory;
+use windows::Win32::Graphics::Direct2D::ID2D1CommandList;
 use windows::Win32::Graphics::Direct2D::ID2D1Device;
 use windows::Win32::Graphics::Direct2D::ID2D1DeviceContext;
 use windows::Win32::Graphics::Direct2D::ID2D1Factory1;
@@ -62,6 +67,9 @@ pub enum DxgiPrintContextError {
     /// Failed to close print control.
     #[error("Failed to close print control")]
     FailedToClosePrintControl(#[source] windows::core::Error),
+    /// The print pipeline failed the job.
+    #[error("The print job failed")]
+    JobFailed(#[source] windows::core::Error),
 }
 
 const DEFAULT_DPI: u32 = 300;
@@ -79,7 +87,7 @@ pub struct DxgiPrintContext {
     pub document_target_factory: IPrintDocumentPackageTargetFactory,
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
-    pub completion_waiter: PrintCompletionWaiter,
+    completion_waiter: PrintCompletionWaiter,
     pub dpi: (u32, u32),
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
@@ -197,8 +205,7 @@ impl DxgiPrintContext {
                 )
                 .map_err(DxgiPrintContextError::FailedToStartJob)?;
 
-            let completion_source =
-                PrintCompletionSource::new().map_err(DxgiPrintContextError::FailedToCreateEvent)?;
+            let completion_source = PrintCompletionSource::new();
             let completion_waiter = completion_source.waiter();
             let completion_source: IPrintDocumentPackageStatusEvent = completion_source.into();
             let cpc: IConnectionPointContainer = document_target
@@ -229,15 +236,31 @@ impl DxgiPrintContext {
         }
     }
 
-    /// Close the print context and wait for the completion of the print job.
-    pub fn close_and_wait(self) -> Result<(), DxgiPrintContextError> {
-        unsafe {
-            self.print_control
-                .Close()
-                .map(|_| ())
-                .map_err(DxgiPrintContextError::FailedToClosePrintControl)?;
+    /// Add a page to the job, breaking when the job has been deleted from the print queue.
+    pub fn add_page(
+        &self,
+        page: &ID2D1CommandList,
+        size: D2D_SIZE_F,
+    ) -> windows::core::Result<ControlFlow<PrintOutcome>> {
+        match unsafe { self.print_control.AddPage(page, size, None, None, None) } {
+            Err(error) if deleted_from_queue(error.code()) => {
+                Ok(ControlFlow::Break(PrintOutcome::Canceled))
+            }
+            added => added.map(ControlFlow::Continue),
         }
-        self.completion_waiter.wait();
-        Ok(())
+    }
+
+    /// Close the print context and wait until the print job has been submitted.
+    pub fn close_and_wait(self) -> Result<PrintOutcome, DxgiPrintContextError> {
+        let closed = unsafe { self.print_control.Close() };
+        // A job that has ended, such as one canceled outside this process, may fail to close.
+        match (closed, self.completion_waiter.poll()) {
+            (Err(error), None) if deleted_from_queue(error.code()) => Ok(PrintOutcome::Canceled),
+            (Err(error), None) => Err(DxgiPrintContextError::FailedToClosePrintControl(error)),
+            _ => self
+                .completion_waiter
+                .wait()
+                .map_err(DxgiPrintContextError::JobFailed),
+        }
     }
 }

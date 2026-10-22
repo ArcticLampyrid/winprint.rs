@@ -6,7 +6,7 @@ mod common;
 use common::print;
 use common::visual::VisualExpectation;
 use winprint::{
-    printer::{FilePrinter, WinPdfPrinter},
+    printer::{FilePrinter, PrintOutcome, WinPdfPrinter},
     ticket::{
         FeatureOptionPackWithPredefined, PredefinedMediaName, PrintCapabilities, PrintTicket,
     },
@@ -30,9 +30,10 @@ fn win_pdf_visual_regression() {
             .find(|x| x.as_predefined_name() == Some(PredefinedMediaName::ISOA4))
             .unwrap();
         let print_ticket: PrintTicket = media_size.into();
-        printer
+        let outcome = printer
             .print(origin.as_path(), print_ticket)
             .expect("failed to print the document");
+        assert_eq!(outcome, PrintOutcome::Completed);
     });
     expectation.assert(&actual_pages);
 }

@@ -1,4 +1,6 @@
+use crate::printer::pipeline_outcome;
 use crate::printer::FilePrinter;
+use crate::printer::PrintOutcome;
 use crate::printer::PrinterDevice;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
@@ -10,7 +12,7 @@ use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::{CloseHandle, HANDLE},
+        Foundation::{CloseHandle, HANDLE, WAIT_FAILED},
         Storage::Xps::{Printing::*, *},
         System::{Com::*, Threading::*},
     },
@@ -37,6 +39,12 @@ pub enum XpsPrinterError {
     /// Stream is not available.
     #[error("Stream is not available")]
     StreamNotAvailable,
+    /// Failed to wait for the job.
+    #[error("Failed to wait for the job")]
+    FailedToWaitForJob(#[source] windows::core::Error),
+    /// The print pipeline failed the job.
+    #[error("The print job failed")]
+    JobFailed(#[source] windows::core::Error),
 }
 
 /// A printer to print XPS documents.
@@ -54,20 +62,25 @@ impl XpsPrinter {
 impl FilePrinter for XpsPrinter {
     type Options = PrintTicket;
     type Error = XpsPrinterError;
-    fn print(&self, path: &Path, options: PrintTicket) -> std::result::Result<(), XpsPrinterError> {
+    fn print(
+        &self,
+        path: &Path,
+        options: PrintTicket,
+    ) -> std::result::Result<PrintOutcome, XpsPrinterError> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             defer! {
                 CoUninitialize();
             }
-            let event = CreateEventW(None, true, false, None)
+            let completion_event = CreateEventW(None, true, false, None)
                 .map_err(XpsPrinterError::FailedToCreateEvent)?;
             defer! {
-                let _ = CloseHandle(event);
+                let _ = CloseHandle(completion_event);
             }
             let xps_factory: IXpsOMObjectFactory =
                 CoCreateInstance(&XpsOMObjectFactory, None, CLSCTX_ALL)
                     .map_err(XpsPrinterError::FailedToCreateObjectFactory)?;
+            let mut job = Option::<IXpsPrintJob>::None;
             let mut document_stream = Option::<IXpsPrintJobStream>::None;
             let mut print_ticket_stream = Option::<IXpsPrintJobStream>::None;
             StartXpsPrintJob(
@@ -75,13 +88,14 @@ impl FilePrinter for XpsPrinter {
                 PCWSTR(wchar::to_wide_chars(path.file_name().unwrap_or(path.as_ref())).as_ptr()),
                 None,
                 HANDLE::default(),
-                event,
+                completion_event,
                 &[],
-                ptr::null_mut(),
+                ptr::addr_of_mut!(job),
                 ptr::addr_of_mut!(document_stream),
                 ptr::addr_of_mut!(print_ticket_stream),
             )
             .map_err(XpsPrinterError::FailedToStartJob)?;
+            let job = job.ok_or(XpsPrinterError::StreamNotAvailable)?;
             let print_ticket_stream =
                 print_ticket_stream.ok_or(XpsPrinterError::StreamNotAvailable)?;
             let print_ticket = options.get_xml();
@@ -107,16 +121,39 @@ impl FilePrinter for XpsPrinter {
             document_stream
                 .Close()
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
-            WaitForSingleObject(event, INFINITE);
+            wait_for_job(&job, completion_event)
         }
-        Ok(())
+    }
+}
+
+/// Wait until `job` ends.
+unsafe fn wait_for_job(
+    job: &IXpsPrintJob,
+    completion_event: HANDLE,
+) -> Result<PrintOutcome, XpsPrinterError> {
+    loop {
+        let mut status = XPS_JOB_STATUS::default();
+        job.GetJobStatus(&mut status)
+            .map_err(XpsPrinterError::FailedToWaitForJob)?;
+        let completion = PrintDocumentPackageCompletion(status.completion.0);
+        if let Some(end) = pipeline_outcome(completion, status.jobStatus) {
+            return end.map_err(XpsPrinterError::JobFailed);
+        }
+        if WaitForSingleObject(completion_event, INFINITE) == WAIT_FAILED {
+            return Err(XpsPrinterError::FailedToWaitForJob(
+                windows::core::Error::from_thread(),
+            ));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::XpsPrinter;
-    use crate::{printer::FilePrinter, test_utils::null_device};
+    use crate::{
+        printer::{FilePrinter, PrintOutcome},
+        test_utils::null_device,
+    };
     use std::path::Path;
 
     #[test]
@@ -124,6 +161,9 @@ mod tests {
         let device = null_device::thread_local();
         let xps = XpsPrinter::new(device);
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
-        xps.print(path.as_path(), Default::default()).unwrap();
+        assert_eq!(
+            xps.print(path.as_path(), Default::default()).unwrap(),
+            PrintOutcome::Completed
+        );
     }
 }
