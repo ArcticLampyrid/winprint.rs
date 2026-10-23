@@ -1,14 +1,24 @@
-use crate::printer::PrinterDevice;
+use super::powershell::{quote as ps_quote, run_sequentially};
+use crate::{printer::PrinterDevice, utils::wchar};
+use scopeguard::defer;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     io,
     marker::PhantomData,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::{Mutex, OnceLock},
+    thread,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        Foundation::ERROR_INSUFFICIENT_BUFFER,
+        Graphics::Printing::{ClosePrinter, EnumJobsW, OpenPrinterW, PRINTER_HANDLE},
+    },
+};
 
 /// Defines a virtual "print-to-file" device backed by a built-in Windows driver.
 ///
@@ -34,30 +44,6 @@ impl FilePrinterProvider for Pdf {
     fn driver_name() -> &'static str {
         "Microsoft Print To PDF"
     }
-}
-
-fn ps_quote(s: &str) -> String {
-    // PowerShell single-quoted string: escape ' by doubling it.
-    format!("'{}'", s.replace('\'', "''"))
-}
-
-/// Run a PowerShell script and fail with `io::Error` if PowerShell exits with a non-zero status.
-///
-/// `context` is prepended to the resulting error message for easier diagnosis.
-fn run_powershell(context: &str, script: &str) -> io::Result<()> {
-    let status = Command::new("powershell")
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .args(["-NoProfile", "-Command", script])
-        .status()?;
-    if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("powershell failed during {context}: exit status {status:?}"),
-        ));
-    }
-    Ok(())
 }
 
 fn printer_name_for(port_path: &str) -> String {
@@ -90,20 +76,15 @@ fn ensure_driver_and_cleanup(driver: &'static str) -> io::Result<()> {
         return Ok(());
     }
 
-    // NOTE: keep this script compatible with Windows PowerShell 5.1.
-    //
     // Error-handling policy:
-    //   * `$ErrorActionPreference = 'Stop'` by default — any unexpected failure aborts the
-    //     script with a non-zero exit code.
+    //   * `configure` sets `$ErrorActionPreference = 'Stop'` — any unexpected failure
+    //     aborts the script with a non-zero exit code.
     //   * Operations where "failure" is a legitimate expected outcome (e.g. "the printer I
     //     just removed is already gone because a sibling process also cleaned it") are wrapped
     //     in `try { ... } catch { Write-Warning ... }` so they are visibly reported but do
     //     not abort the whole sweep.
     let script = format!(
         r#"
-$ErrorActionPreference = 'Stop'
-Set-StrictMode -Version 2
-
 # 1. Install the driver if missing.
 if (-not (Get-PrinterDriver -Name {driver_q} -ErrorAction SilentlyContinue)) {{
     Add-PrinterDriver -Name {driver_q}
@@ -185,7 +166,7 @@ foreach ($p in $printers) {{
 "#,
         driver_q = ps_quote(driver),
     );
-    run_powershell("driver install + leftover cleanup", &script)?;
+    run_sequentially("driver install + leftover cleanup", &script)?;
     guard.insert(driver);
     Ok(())
 }
@@ -229,8 +210,6 @@ impl<T: FilePrinterProvider> FilePrinterDevice<T> {
 
         let script = format!(
             r#"
-$ErrorActionPreference = 'Stop'
-Set-StrictMode -Version 2
 if (-not (Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue)) {{
     Add-PrinterPort -Name {port_q}
 }}
@@ -240,7 +219,7 @@ Add-Printer -Name {name_q} -PortName {port_q} -DriverName {driver_q}
             name_q = ps_quote(&printer_name),
             driver_q = ps_quote(driver),
         );
-        run_powershell("add printer", &script)?;
+        run_sequentially("add printer", &script)?;
 
         let device = PrinterDevice::all()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("enumerate printers: {e:?}")))?
@@ -271,6 +250,43 @@ Add-Printer -Name {name_q} -PortName {port_q} -DriverName {driver_q}
     pub fn file_path(&self) -> &Path {
         &self.port_path
     }
+
+    /// Waits until the printer queue is empty
+    pub fn wait_for_idle(&self, timeout: Duration) -> io::Result<()> {
+        let started = Instant::now();
+        let name = wchar::to_wide_chars(self.device.os_name());
+        let mut printer = PRINTER_HANDLE::default();
+        unsafe { OpenPrinterW(PCWSTR(name.as_ptr()), &mut printer, None)? };
+        defer! {
+            let _ = unsafe { ClosePrinter(printer) };
+        }
+        loop {
+            // A zero-size buffer suffices to check for an empty queue. Request only
+            // the first job: any job requires a buffer, which means we must wait.
+            let mut needed = 0;
+            let mut returned = 0;
+            let queue_empty =
+                match unsafe { EnumJobsW(printer, 0, 1, 1, None, &mut needed, &mut returned) } {
+                    Ok(()) => true,
+                    Err(error) if error.code() == ERROR_INSUFFICIENT_BUFFER.to_hresult() => false,
+                    Err(error) => return Err(error.into()),
+                };
+            if queue_empty {
+                return Ok(());
+            }
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!(
+                        "timed out waiting for printer '{}' to become idle",
+                        self.device.name(),
+                    ),
+                ));
+            }
+            thread::sleep(remaining.min(Duration::from_millis(250)));
+        }
+    }
 }
 
 impl<T: FilePrinterProvider> Drop for FilePrinterDevice<T> {
@@ -278,8 +294,6 @@ impl<T: FilePrinterProvider> Drop for FilePrinterDevice<T> {
         let port_str = self.port_path.to_string_lossy().into_owned();
         let script = format!(
             r#"
-$ErrorActionPreference = 'Stop'
-Set-StrictMode -Version 2
 if ($p = Get-Printer -Name {name_q} -ErrorAction SilentlyContinue) {{
     try {{ Remove-Printer -InputObject $p }}
     catch {{ Write-Warning ("Remove-Printer {{0}} failed: {{1}}" -f {name_q}, $_.Exception.Message) }}
@@ -293,7 +307,9 @@ if ($port = Get-PrinterPort -Name {port_q} -ErrorAction SilentlyContinue) {{
             port_q = ps_quote(&port_str),
         );
         // Drop cannot propagate errors.
-        let _ = run_powershell("remove printer", &script);
+        if let Err(error) = run_sequentially("remove printer", &script) {
+            eprintln!("{error}");
+        }
         let _ = std::fs::remove_file(&self.port_path);
     }
 }

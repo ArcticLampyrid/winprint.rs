@@ -5,3 +5,4 @@
 pub mod file_device;
 /// Provides a auto-managed null printer device for testing.
 pub mod null_device;
+mod powershell;

@@ -50,10 +50,20 @@ Vagrant.configure("2") do |config|
   config.ssh.insert_key = false
   config.ssh.disable_deprecated_algorithms = true
 
-  # WinRM's built-in Windows PowerShell is used only to bootstrap PowerShell 7.
-  config.vm.provision "bootstrap", run: "once", type: "shell", inline: <<~PS
+  config.vm.provision "bootstrap", run: "once", type: "shell", privileged: true,
+      powershell_elevated_interactive: true, inline: <<~PS
     $ErrorActionPreference = "Stop"
+    Write-Host "Installing WinGet PowerShell module from PSGallery..."
+    Install-PackageProvider -Name NuGet -Force | Out-Null
+    Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery -Scope AllUsers | Out-Null
+    Write-Host "Installing the latest WinGet package for the provisioning user..."
+    Import-Module -Name Microsoft.WinGet.Client
+    Repair-WinGetPackageManager -Latest -Force
+    Write-Host "Provisioning the latest WinGet package for all users..."
+    Repair-WinGetPackageManager -AllUsers -Latest -Force
+    Write-Host "Installing PowerShell 7..."
     Invoke-Expression "& { $(Invoke-RestMethod 'https://aka.ms/install-powershell.ps1') } -Destination 'C:/Program Files/PowerShell/7'"
+    Write-Host "Creating C:/vm-utils for provisioning files..."
     New-Item -ItemType Directory -Path C:/vm-utils -Force | Out-Null
   PS
   config.vm.provision "file", run: "once", source: "/app/.vagrant/windows-ssh.pub",
@@ -63,6 +73,8 @@ Vagrant.configure("2") do |config|
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $true
     Set-StrictMode -Version Latest
+    Set-ExecutionPolicy Unrestricted -Scope Process
+    Import-Module -Name Microsoft.WinGet.Client
 
     # Identify only our dedicated disk; never format an unrelated disk.
     $disks = @(Get-Disk | Where-Object { $_.SerialNumber -and $_.SerialNumber.Trim() -eq 'dev-space' })
@@ -94,21 +106,20 @@ Vagrant.configure("2") do |config|
     New-ItemProperty -Path 'HKLM:/SYSTEM/CurrentControlSet/Control/FileSystem' `
         -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force | Out-Null
 
-    function Install-WingetPackage([string]$Id, [string[]]$Arguments = @()) {
-        $PSNativeCommandUseErrorActionPreference = $false
-        winget install --id $Id --source winget --exact --scope machine --silent `
-            --accept-source-agreements --accept-package-agreements --disable-interactivity @Arguments
-        # This provisioner reboots afterwards, so a pending restart is success:
-        # 0x8A150109 (REBOOT_REQUIRED_TO_FINISH), or 3010 from older winget.
-        if ($LASTEXITCODE -notin 0, -1978334967, 3010) {
-            throw "winget failed to install $Id (exit code $LASTEXITCODE)."
-        }
+    $wingetResult = @(
+        Install-WinGetPackage -Id Microsoft.VisualStudio.BuildTools -Source winget `
+            -MatchOption Equals -Scope System -Mode Silent -Confirm:$false `
+            -Override '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US'
+        Install-WinGetPackage -Id LLVM.LLVM -Source winget `
+            -MatchOption Equals -Scope Any -Mode Silent -Confirm:$false
+        Install-WinGetPackage -Id kunobi-ninja.kache -Source winget `
+            -MatchOption Equals -Scope System -Mode Silent -Confirm:$false
+        Install-WinGetPackage -Id Microsoft.OpenSSH.Preview -Source winget `
+            -MatchOption Equals -Scope System -Mode Silent -Confirm:$false
+    )
+    $wingetResult | Where-Object { -not $_.Succeeded() } | ForEach-Object {
+        throw "winget failed to install $($_.Id) ($($_.ErrorMessage()))."
     }
-    Install-WingetPackage Microsoft.VisualStudio.BuildTools -Arguments '--override',
-        '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --wait --quiet --norestart --locale en-US'
-    Install-WingetPackage LLVM.LLVM
-    Install-WingetPackage kunobi-ninja.kache
-    Install-WingetPackage Microsoft.OpenSSH.Preview
 
     # kache supports clang-cl, not cl.exe; retain MSVC for its linker and SDK.
     $llvmBin = Join-Path $env:ProgramFiles 'LLVM/bin'
@@ -130,13 +141,12 @@ Vagrant.configure("2") do |config|
 
     # Select the Dev Drive cache before init configures Cargo and starts kache.
     New-Item -ItemType Directory -Path "$HOME/.config/kache" -Force | Out-Null
-    @'
-    [cache]
-    local_store = "D:/kache"
-    '@ | Set-Content -LiteralPath "$HOME/.config/kache/config.toml" -Encoding utf8NoBOM
+    '[cache]', 'local_store = "D:/kache"' | Set-Content -LiteralPath "$HOME/.config/kache/config.toml" -Encoding utf8NoBOM
     kache init --yes
 
-    cargo +stable install cargo-hack --locked
+    Invoke-RestMethod "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1" | Invoke-Expression
+    cargo binstall --no-confirm cargo-hack
+    cargo binstall --no-confirm cargo-nextest
 
     # OpenSSH uses PowerShell 7 for interactive sessions and remote commands.
     New-ItemProperty -Path HKLM:/SOFTWARE/OpenSSH -Name DefaultShell `
@@ -172,7 +182,7 @@ Vagrant.configure("2") do |config|
   config.vm.provision "setup", run: "once", type: "shell", reboot: true, privileged: true,
       powershell_elevated_interactive: false, inline: <<~PS
     $ErrorActionPreference = "Stop"
-    & 'C:/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -EncodedCommand '#{Base64.strict_encode64(setup_command.encode("UTF-16LE"))}'
+    & 'C:/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand '#{Base64.strict_encode64(setup_command.encode("UTF-16LE"))}'
     exit $LASTEXITCODE
   PS
 end

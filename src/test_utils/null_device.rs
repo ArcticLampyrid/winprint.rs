@@ -1,11 +1,11 @@
+use super::powershell::{quote, run_sequentially};
 use crate::printer::PrinterDevice;
-use sha2::{Digest, Sha256};
-use std::{cell::OnceCell, process::Stdio, sync::OnceLock};
+use std::{cell::OnceCell, sync::OnceLock};
+use uuid::Uuid;
 
 thread_local! {
     static NULL_DEVICE: OnceCell<NullPrinterDevice> = const { OnceCell::new() };
 }
-static DEVICE_ID_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static PORT_AND_DRIVER_INSTALLER: OnceLock<()> = OnceLock::new();
 
 struct NullPrinterDevice {
@@ -15,75 +15,51 @@ struct NullPrinterDevice {
 impl NullPrinterDevice {
     fn new() -> Self {
         PORT_AND_DRIVER_INSTALLER.get_or_init(|| {
-            std::process::Command::new("powershell")
-                .stdin(Stdio::null())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .args([
-                    "-Command",
-                    "if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) {Add-PrinterDriver 'Generic / Text Only' -ErrorAction Continue} if (-not (Get-PrinterPort -Name 'nul:' -ErrorAction SilentlyContinue)) {Add-PrinterPort -Name 'nul:' -ErrorAction Continue}",
-                ])
-                .spawn()
-                .unwrap()
-                .wait()
-                .unwrap();
+            run_sequentially(
+                "install null printer driver and port",
+                r#"
+if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) {
+    Add-PrinterDriver -Name 'Generic / Text Only'
+}
+if (-not (Get-PrinterPort -Name 'nul:' -ErrorAction SilentlyContinue)) {
+    Add-PrinterPort -Name 'nul:'
+}
+"#,
+            )
+            .expect("install null printer driver and port");
         });
 
-        let id = DEVICE_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // A same executable can be run in multiple processes.
+        // Never use process local counters to generate unique names,
+        // because they can collide across processes.
+        let printer_name = format!(
+            "null-device-{}",
+            bs58::encode(Uuid::new_v4().as_bytes()).into_string()
+        );
+        run_sequentially(
+            "add null printer",
+            &format!(
+                "Add-Printer -Name {} -PortName 'nul:' -DriverName 'Generic / Text Only'",
+                quote(&printer_name)
+            ),
+        )
+        .expect("add null printer");
 
-        let exe_path = std::env::current_exe().unwrap().canonicalize().unwrap();
-        let exe_id =
-            bs58::encode(Sha256::digest(exe_path.to_string_lossy().as_bytes())).into_string();
-
-        let printer_name = format!("null-device-{}-{}", exe_id, id);
-
-        let printer = PrinterDevice::all()
-            .unwrap()
-            .into_iter()
-            .find(|p| p.name() == printer_name);
-        if let Some(printer) = printer {
-            return NullPrinterDevice { printer };
-        }
-
-        std::process::Command::new("powershell")
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .args([
-                "-Command",
-                &format!(
-                    "Add-Printer -Name '{}' -PortName 'nul:' -DriverName 'Generic / Text Only'",
-                    printer_name
-                ),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
-
-        let printer = PrinterDevice::all()
-            .unwrap()
-            .into_iter()
-            .find(|p| p.name() == printer_name)
-            .unwrap();
+        let printer =
+            PrinterDevice::by_os_name(&printer_name).expect("find newly created null printer");
         NullPrinterDevice { printer }
     }
 }
 
 impl Drop for NullPrinterDevice {
     fn drop(&mut self) {
-        std::process::Command::new("powershell")
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .args([
-                "-Command",
-                &format!("Remove-Printer -Name '{}'", self.printer.name()),
-            ])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap();
+        // Destructors also run while unwinding; report cleanup failures without panicking.
+        if let Err(error) = run_sequentially(
+            "remove null printer",
+            &format!("Remove-Printer -Name {}", quote(self.printer.name())),
+        ) {
+            eprintln!("{error}");
+        }
     }
 }
 

@@ -51,7 +51,6 @@ impl VisualExpectation {
         }
     }
 
-    #[allow(dead_code)]
     pub const fn with_min_score(mut self, v: f64) -> Self {
         self.min_score = v;
         self

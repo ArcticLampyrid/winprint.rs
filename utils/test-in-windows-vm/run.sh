@@ -357,7 +357,7 @@ run_exec() {
 }
 
 run_tests() {
-  run_exec cargo hack test --all-targets --each-feature --no-fail-fast
+  run_exec cargo hack nextest run --all-targets --each-feature --skip default,test-utils --no-fail-fast
 }
 
 run_host_client() (

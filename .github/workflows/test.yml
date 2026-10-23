@@ -20,8 +20,8 @@ jobs:
       uses: moonrepo/setup-rust@v1
       with:
         channel: stable
-        bins: cargo-hack
+        bins: cargo-hack,cargo-nextest
       env:
         GITHUB_TOKEN: ${{ github.token }}
     - name: Test
-      run: cargo hack test --all-targets --each-feature --verbose
+      run: cargo hack nextest run --all-targets --each-feature --skip default,test-utils --no-fail-fast

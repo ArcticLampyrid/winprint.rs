@@ -80,5 +80,5 @@ encoded_command="$(
     iconv --from-code=UTF-8 --to-code=UTF-16LE |
     base64 --wrap=0
 )"
-exec ssh -t -F "${ssh_config}" default \
+ssh -F "${ssh_config}" default \
   "& 'C:/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand ${encoded_command}; exit \$LASTEXITCODE"
