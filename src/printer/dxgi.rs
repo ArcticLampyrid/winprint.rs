@@ -10,6 +10,7 @@ use crate::utils::wchar;
 use std::cmp::max;
 use std::ffi::OsStr;
 use std::ops::ControlFlow;
+use std::ops::Deref;
 use std::ptr;
 use thiserror::Error;
 use windows::core::Interface;
@@ -23,6 +24,8 @@ use windows::Win32::Graphics::Direct2D::ID2D1Device;
 use windows::Win32::Graphics::Direct2D::ID2D1DeviceContext;
 use windows::Win32::Graphics::Direct2D::ID2D1Factory1;
 use windows::Win32::Graphics::Direct2D::ID2D1PrintControl;
+use windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE;
+use windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SRGB;
 use windows::Win32::Graphics::Direct2D::D2D1_DEVICE_CONTEXT_OPTIONS_NONE;
 use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_OPTIONS;
 use windows::Win32::Graphics::Direct2D::D2D1_FACTORY_TYPE_MULTI_THREADED;
@@ -35,6 +38,8 @@ use windows::Win32::Graphics::Direct3D11::D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 use windows::Win32::Graphics::Direct3D11::D3D11_SDK_VERSION;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::Graphics::Gdi::DEVMODEW;
+use windows::Win32::Graphics::Gdi::DM_PRINTQUALITY;
+use windows::Win32::Graphics::Gdi::DM_YRESOLUTION;
 use windows::Win32::Graphics::Imaging::CLSID_WICImagingFactory2;
 use windows::Win32::Graphics::Imaging::D2D::IWICImagingFactory2;
 use windows::Win32::Storage::Xps::Printing::IPrintDocumentPackageStatusEvent;
@@ -74,9 +79,27 @@ pub enum DxgiPrintContextError {
 
 const DEFAULT_DPI: u32 = 300;
 
-/// Represents a print context during printing via DXGI.
+/// The resolution that `dev_mode` asks for, taking one axis for the other when it asks for only
+/// one, or [`DEFAULT_DPI`] when it asks for none.
+fn resolution(dev_mode: &DEVMODEW) -> (u32, u32) {
+    let print_quality = unsafe { dev_mode.Anonymous1.Anonymous1.dmPrintQuality };
+    let axis = |flag, dpi: i16| (dev_mode.dmFields.contains(flag) && dpi > 0).then_some(dpi as u32);
+    match (
+        axis(DM_PRINTQUALITY, print_quality),
+        axis(DM_YRESOLUTION, dev_mode.dmYResolution),
+    ) {
+        (Some(x), Some(y)) => (x, y),
+        (Some(dpi), None) | (None, Some(dpi)) => (dpi, dpi),
+        (None, None) => (DEFAULT_DPI, DEFAULT_DPI),
+    }
+}
+
+/// The DirectX devices that draw for a print job, created before the job starts.
+///
+/// Drawing with them, such as inspecting color profiles, can decide how to start the job. See
+/// [`DxgiRenderContext::start_job`].
 #[allow(missing_docs)]
-pub struct DxgiPrintContext {
+pub struct DxgiRenderContext {
     pub d3d_device: ID3D11Device,
     pub d3d_context: ID3D11DeviceContext,
     pub dxgi_device: IDXGIDevice,
@@ -84,53 +107,16 @@ pub struct DxgiPrintContext {
     pub d2d_device: ID2D1Device,
     pub d2d_context: ID2D1DeviceContext,
     pub wic_factory: IWICImagingFactory2,
-    pub document_target_factory: IPrintDocumentPackageTargetFactory,
-    pub document_target: IPrintDocumentPackageTarget,
-    pub print_control: ID2D1PrintControl,
-    completion_waiter: PrintCompletionWaiter,
-    /// Whether the job has ended, so that dropping the context leaves it alone.
-    job_ended: bool,
-    pub dpi: (u32, u32),
     // The last field will be dropped last, according to the drop order.
     _com_initializer: ComInitializer,
 }
 
-impl DxgiPrintContext {
-    /// Create a new print context, used for printing via DXGI.
-    pub fn new(
-        device: &PrinterDevice,
-        options: &PrintTicket,
-        job_name: &OsStr,
-    ) -> Result<Self, DxgiPrintContextError> {
+impl DxgiRenderContext {
+    /// Create the devices to draw for a print job with.
+    pub fn new() -> Result<Self, DxgiPrintContextError> {
         // Initialize COM before calling any COM functions.
         let _com_initializer = ComInitializer::new();
         unsafe {
-            let dev_mode = options
-                .to_dev_mode(device)
-                .map_err(DxgiPrintContextError::PrintTicketError)?;
-            let dpi = {
-                let dev_mode = &*(dev_mode.as_ptr() as *const DEVMODEW);
-                let dpi_x = if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_PRINTQUALITY)
-                    .0
-                    != 0
-                {
-                    Some(dev_mode.Anonymous1.Anonymous1.dmPrintQuality).filter(|x| *x > 0)
-                } else {
-                    None
-                };
-                let dpi_y =
-                    if (dev_mode.dmFields & windows::Win32::Graphics::Gdi::DM_YRESOLUTION).0 != 0 {
-                        Some(dev_mode.dmYResolution).filter(|y| *y > 0)
-                    } else {
-                        None
-                    };
-                match (dpi_x, dpi_y) {
-                    (Some(x), Some(y)) => (x as u32, y as u32),
-                    (Some(x), None) => (x as u32, x as u32),
-                    (None, Some(y)) => (y as u32, y as u32),
-                    (None, None) => (DEFAULT_DPI, DEFAULT_DPI),
-                }
-            };
             let mut d3d_device: Option<ID3D11Device> = None;
             let mut d3d_context: Option<ID3D11DeviceContext> = None;
             D3D11CreateDevice(
@@ -172,11 +158,45 @@ impl DxgiPrintContext {
             let d2d_context = d2d_device
                 .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)
                 .map_err(DxgiPrintContextError::InitializeDirectX)?;
-            d2d_context.SetDpi(dpi.0 as f32, dpi.1 as f32);
 
             let wic_factory: IWICImagingFactory2 =
                 CoCreateInstance(&CLSID_WICImagingFactory2, None, CLSCTX_ALL)
                     .map_err(DxgiPrintContextError::InitializeDirectX)?;
+
+            Ok(Self {
+                d3d_device,
+                d3d_context,
+                dxgi_device,
+                d2d_factory,
+                d2d_device,
+                d2d_context,
+                wic_factory,
+                _com_initializer,
+            })
+        }
+    }
+
+    /// Start a print job drawn with these devices, whose print control writes colors in
+    /// `color_space`.
+    ///
+    /// Direct2D supports [`D2D1_COLOR_SPACE_SRGB`] and
+    /// [`D2D1_COLOR_SPACE_SCRGB`](windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SCRGB)
+    /// here. The print control reads every bitmap in that color space: in scRGB, it takes the
+    /// samples of 8-bit bitmaps as linear too, while floating point bitmaps keep colors outside
+    /// the sRGB gamut.
+    pub fn start_job(
+        self,
+        device: &PrinterDevice,
+        options: &PrintTicket,
+        job_name: &OsStr,
+        color_space: D2D1_COLOR_SPACE,
+    ) -> Result<DxgiPrintContext, DxgiPrintContextError> {
+        unsafe {
+            let dev_mode = options
+                .to_dev_mode(device)
+                .map_err(DxgiPrintContextError::PrintTicketError)?;
+            let dpi = resolution(&*(dev_mode.as_ptr() as *const DEVMODEW));
+            self.d2d_context.SetDpi(dpi.0 as f32, dpi.1 as f32);
 
             let document_target_factory: IPrintDocumentPackageTargetFactory =
                 CoCreateInstance(&PrintDocumentPackageTargetFactory, None, CLSCTX_ALL)
@@ -197,11 +217,13 @@ impl DxgiPrintContext {
             });
             let print_control_options = D2D1_PRINT_CONTROL_PROPERTIES {
                 rasterDPI: max(dpi.0, dpi.1) as f32,
+                colorSpace: color_space,
                 ..Default::default()
             };
-            let print_control = d2d_device
+            let print_control = self
+                .d2d_device
                 .CreatePrintControl(
-                    &wic_factory,
+                    &self.wic_factory,
                     &document_target,
                     Some(ptr::addr_of!(print_control_options)),
                 )
@@ -220,23 +242,51 @@ impl DxgiPrintContext {
 
             // The finished context owns the job from here on.
             let _ = scopeguard::ScopeGuard::into_inner(job_guard);
-            Ok(Self {
-                d3d_device,
-                d3d_context,
-                dxgi_device,
-                d2d_factory,
-                d2d_device,
-                d2d_context,
-                wic_factory,
+            Ok(DxgiPrintContext {
                 document_target_factory,
                 document_target,
                 print_control,
                 completion_waiter,
                 job_ended: false,
                 dpi,
-                _com_initializer,
+                render: self,
             })
         }
+    }
+}
+
+/// Represents a print context during printing via DXGI.
+///
+/// It dereferences to the [`DxgiRenderContext`] that draws its pages.
+#[allow(missing_docs)]
+pub struct DxgiPrintContext {
+    pub document_target_factory: IPrintDocumentPackageTargetFactory,
+    pub document_target: IPrintDocumentPackageTarget,
+    pub print_control: ID2D1PrintControl,
+    completion_waiter: PrintCompletionWaiter,
+    /// Whether the job has ended, so that dropping the context leaves it alone.
+    job_ended: bool,
+    pub dpi: (u32, u32),
+    // Dropped last, after the job and its print control, which use its devices.
+    render: DxgiRenderContext,
+}
+
+impl Deref for DxgiPrintContext {
+    type Target = DxgiRenderContext;
+
+    fn deref(&self) -> &DxgiRenderContext {
+        &self.render
+    }
+}
+
+impl DxgiPrintContext {
+    /// Create a new print context in sRGB, used for printing via DXGI.
+    pub fn new(
+        device: &PrinterDevice,
+        options: &PrintTicket,
+        job_name: &OsStr,
+    ) -> Result<Self, DxgiPrintContextError> {
+        DxgiRenderContext::new()?.start_job(device, options, job_name, D2D1_COLOR_SPACE_SRGB)
     }
 
     /// Add a page to the job, breaking when the job has been deleted from the print queue.
