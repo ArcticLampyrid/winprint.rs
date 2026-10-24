@@ -67,6 +67,14 @@ pub enum PdfiumPrinterError {
 }
 
 /// A printer that uses Pdfium to print PDF documents.
+///
+/// # Color management
+///
+/// PDFium ignores the rendering intents of documents. It converts colors in ICC-based color
+/// spaces to sRGB with the perceptual intent and black point compensation, not with relative
+/// colorimetric, the default of PDF. This only matters for profiles with a separate perceptual
+/// rendering, or whose black is lighter than absolute black: with most CMYK profiles of
+/// printing conditions, shadows print darker.
 pub struct PdfiumPrinter {
     printer: PrinterDevice,
 }

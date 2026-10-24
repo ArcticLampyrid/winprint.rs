@@ -59,6 +59,14 @@ pub enum WinPdfPrinterError {
 }
 
 /// A printer that uses [`Windows.Data.Pdf`](https://learn.microsoft.com/en-us/uwp/api/windows.data.pdf?view=winrt-26100) to to print PDF documents.
+///
+/// # Color management
+///
+/// As of Windows 11 25H2, `Windows.Data.Pdf` misprints images with 16 bits per component in
+/// calibrated color spaces. It swaps red and blue in three-component `ICCBased` and `CalRGB`
+/// images, prints `Lab` images in wrong colors, and `ICCBased` CMYK images with small errors.
+/// `DeviceRGB` and gray images with 16 bits per component, and `ICCBased` images with 8 bits
+/// per component, print correctly.
 pub struct WinPdfPrinter {
     printer: PrinterDevice,
     override_render_dpi: Option<(u32, u32)>,
