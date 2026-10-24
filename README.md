@@ -19,7 +19,7 @@ For efficiency, [`cargo hack`](https://github.com/taiki-e/cargo-hack) and [`carg
 cargo hack nextest run --all-targets --each-feature --skip default,test-utils --no-fail-fast
 ```
 
-Some fixtures are required for tests, and they are shipped in the repo. If you want to learn how they are generated, see `utils/gen-visual-regression-data/`.
+Some fixtures are required for tests, and they are shipped in the repo. If you want to learn how they are generated, see `utils/gen-visual-regression-data/` and `utils/gen-color-management-data/`.
 
 ### Testing on Linux Host
 Since this crate is designed for Windows, it cannot be directly tested on a Linux host. However, a script is provided to run the test suite inside a Windows 11 VM on a Linux host.
