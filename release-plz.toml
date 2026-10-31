@@ -1,6 +1,7 @@
 [workspace]
 changelog_update = false
 release_always = false
+pr_labels = ["release"]
 
 [[package]]
 name = "winprint"
