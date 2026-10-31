@@ -256,6 +256,9 @@ impl XmlSerializer for super::PropertyValue {
         ns.put("psf", NS_PSF);
         ns.put("xsi", NS_XSI);
         collect_namespace_from_name(&self.xsi_type(), ns);
+        if let super::PropertyValue::QName(q) = self {
+            collect_namespace_from_name(q, ns);
+        }
     }
 
     fn write_to<W: Write>(&self, writer: &mut EventWriter<W>) -> Result<(), xml::writer::Error> {
@@ -271,7 +274,7 @@ impl XmlSerializer for super::PropertyValue {
                 writer.write(XmlEvent::characters(&i.to_string()))?;
             }
             super::PropertyValue::QName(q) => {
-                writer.write(XmlEvent::characters(&q.to_string()))?;
+                writer.write(XmlEvent::characters(format_name(q).as_ref()))?;
             }
             super::PropertyValue::Unknown(_, s) => {
                 writer.write(XmlEvent::characters(s))?;
@@ -324,6 +327,7 @@ mod tests {
         let origin_document = PrintTicketDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
         let document = PrintTicketDocument::parse_from_bytes(&xml1).unwrap();
+        assert_eq!(origin_document, document);
         let xml2 = document.to_xml();
         assert_eq!(xml1, xml2);
     }
@@ -334,7 +338,36 @@ mod tests {
         let origin_document = PrintCapabilitiesDocument::parse_from_bytes(origin).unwrap();
         let xml1 = origin_document.to_xml();
         let document = PrintCapabilitiesDocument::parse_from_bytes(&xml1).unwrap();
+        assert_eq!(origin_document, document);
         let xml2 = document.to_xml();
         assert_eq!(xml1, xml2);
+    }
+
+    #[test]
+    fn serialize_qname_value() {
+        let origin = br#"<psf:PrintTicket version="1"
+    xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework"
+    xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:ns0000="urn:winprint:only-used-in-value">
+    <psf:Feature name="psk:PageMediaSize">
+        <psf:Option name="psk:NorthAmericaLetter">
+            <psf:Property name="psk:FeedDirection">
+                <psf:Value xsi:type="xsd:QName">psk:LongEdgeFirst</psf:Value>
+            </psf:Property>
+            <psf:Property name="psk:Label">
+                <psf:Value xsi:type="xsd:QName">ns0000:Letter</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+</psf:PrintTicket>"#;
+        let origin_document = PrintTicketDocument::parse_from_bytes(origin).unwrap();
+        let xml = origin_document.to_xml();
+        let text = String::from_utf8_lossy(&xml);
+        assert!(text.contains(">psk:LongEdgeFirst<"), "{text}");
+        assert!(text.contains(">ns0000:Letter<"), "{text}");
+        let document = PrintTicketDocument::parse_from_bytes(&xml).unwrap();
+        assert_eq!(origin_document, document);
     }
 }

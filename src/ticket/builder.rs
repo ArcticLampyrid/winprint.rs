@@ -106,7 +106,10 @@ mod tests {
     use super::PrintTicketBuilder;
     use crate::{
         test_utils::null_device,
-        ticket::{PrintTicket, PrintTicketBuilderError},
+        ticket::{
+            document::{reader::ParsableXmlDocument, PrintTicketDocument},
+            PrintTicket, PrintTicketBuilderError,
+        },
     };
 
     #[test]
@@ -130,6 +133,23 @@ mod tests {
 </psf:PrintTicket>"#;
         builder.merge(PrintTicket::from_xml(delta)).unwrap();
         let _ticket = builder.build().unwrap();
+    }
+
+    #[test]
+    fn merge_reserialized_ticket_with_qname_value() {
+        let device = null_device::thread_local();
+        let mut builder = PrintTicketBuilder::new(&device).unwrap();
+        let delta = r#"<psf:PrintTicket xmlns:psf="http://schemas.microsoft.com/windows/2003/08/printing/printschemaframework" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1" xmlns:psk="http://schemas.microsoft.com/windows/2003/08/printing/printschemakeywords">
+    <psf:Feature name="psk:PageMediaSize">
+        <psf:Option name="psk:NorthAmericaLetter">
+            <psf:Property name="psk:FeedDirection">
+                <psf:Value xsi:type="xsd:QName">psk:LongEdgeFirst</psf:Value>
+            </psf:Property>
+        </psf:Option>
+    </psf:Feature>
+</psf:PrintTicket>"#;
+        let delta = PrintTicketDocument::parse_from_bytes(delta).unwrap();
+        builder.merge(delta).unwrap();
     }
 
     #[test]
