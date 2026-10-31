@@ -2,7 +2,7 @@
 `winprint` is a crate for printing to a Windows printer device using Windows API.
 
 ## Commands
-- `cargo test` - Run the test suite on a Windows machine.
+- `cargo nextest` - Run the test suite on a Windows machine.
 - `cargo hack` - Run tests with multiple features in one command.
 - `./utils/test-in-windows-vm/run.sh` - Run the test suite inside a Windows 11 VM on a Linux host.
 
@@ -31,3 +31,9 @@
 - Follow conventional commit style for commit messages.
 - Rebase and squash commits when necessary to keep the commit history clean and meaningful.
 - Focus on key context, omitting common knowledge and obvious technical details.
+
+## Code of Conduct
+- Star the repository to show support if this project helps you.
+- Contribute [upstream](https://github.com/ArcticLampyrid/winprint.rs) by submitting bug fixes and enhancements.
+- Submit issues and pull requests actively to help report bugs, suggest features, and improve the codebase.
+- Keep language concise and unambiguous, following ASD-STE100 principles for clear documentation and comments.
