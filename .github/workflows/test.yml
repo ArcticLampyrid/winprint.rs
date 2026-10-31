@@ -14,6 +14,7 @@ env:
 jobs:
   test:
     runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.head_ref.contains('release-plz-') == false
     steps:
     - uses: actions/checkout@v7
     - name: Setup Rust toolchain
@@ -25,3 +26,9 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
     - name: Test
       run: cargo hack nextest run --all-targets --each-feature --skip default,test-utils --no-fail-fast
+  dummy:
+    runs-on: ubuntu-slim
+    if: github.event_name == 'pull_request' && github.head_ref.contains('release-plz-')
+    steps:
+    - name: dummy
+      run: echo "This dummy job exists to prevent builds from failing when there are no tasks to run."
