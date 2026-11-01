@@ -1,6 +1,8 @@
 use crate::printer::{pipeline_outcome, PrintOutcome};
+use crate::utils::Deadline;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 use windows::core::w;
 use windows::core::BSTR;
 use windows::Win32::Foundation::E_INVALIDARG;
@@ -61,15 +63,16 @@ impl PrintCompletionWaiter {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-    /// Block until the job ends.
-    pub fn wait(&self) -> JobEnd {
+    /// Block until the job ends, or `None` once `deadline` has passed without it ending.
+    pub fn wait_until(&self, deadline: Deadline) -> Option<JobEnd> {
         let end = self.slot.end.lock().unwrap_or_else(PoisonError::into_inner);
+        let left = deadline.remaining().unwrap_or(Duration::MAX);
         self.slot
             .ended
-            .wait_while(end, |end| end.is_none())
+            .wait_timeout_while(end, left, |end| end.is_none())
             .unwrap_or_else(PoisonError::into_inner)
+            .0
             .clone()
-            .expect("the job has ended")
     }
 }
 
@@ -175,5 +178,44 @@ impl IDispatch_Impl for PrintCompletionSource_Impl {
         } else {
             Err(windows::core::Error::from_hresult(DISP_E_MEMBERNOTFOUND))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+    use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Completed;
+
+    #[test]
+    fn wait_until_gives_up_on_a_job_that_never_ends() {
+        let source = PrintCompletionSource::new();
+        let started = Instant::now();
+        let deadline = Deadline::after(Some(Duration::from_millis(50)));
+        assert!(source.waiter().wait_until(deadline).is_none());
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn wait_until_returns_as_soon_as_the_job_ends() {
+        let source = PrintCompletionSource::new();
+        let waiter = source.waiter();
+        let status = PrintDocumentPackageStatus {
+            Completion: PrintDocumentPackageCompletion_Completed,
+            ..Default::default()
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(20));
+                let sink: IPrintDocumentPackageStatusEvent = source.into();
+                unsafe { sink.PackageStatusUpdated(&status) }.unwrap();
+            });
+            assert_eq!(
+                waiter
+                    .wait_until(Deadline::after(None))
+                    .and_then(Result::ok),
+                Some(PrintOutcome::Completed)
+            );
+        });
     }
 }

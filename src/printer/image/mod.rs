@@ -6,12 +6,15 @@ use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
 use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
+use crate::printer::TimedPrinter;
 use crate::ticket::PrintTicket;
 use crate::utils::com::ComInitializer;
 use crate::utils::wchar;
+use crate::utils::Deadline;
 use color::Converter;
 use std::ops::ControlFlow;
 use std::path::Path;
+use std::time::Duration;
 use thiserror::Error;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::GENERIC_READ;
@@ -50,6 +53,7 @@ pub enum ImagePrinterError {
 pub struct ImagePrinter {
     printer: PrinterDevice,
     wide_color_gamut: bool,
+    timeout: Option<Duration>,
 }
 
 impl ImagePrinter {
@@ -58,6 +62,7 @@ impl ImagePrinter {
         Self {
             printer,
             wide_color_gamut: true,
+            timeout: None,
         }
     }
 
@@ -69,6 +74,12 @@ impl ImagePrinter {
     /// When disabled, every image is converted into sRGB, clipping the colors outside it.
     pub fn set_wide_color_gamut(&mut self, enabled: bool) {
         self.wide_color_gamut = enabled;
+    }
+}
+
+impl TimedPrinter for ImagePrinter {
+    fn set_timeout(&mut self, timeout: Option<Duration>) {
+        self.timeout = timeout;
     }
 }
 
@@ -189,6 +200,7 @@ impl FilePrinter for ImagePrinter {
         options: PrintTicket,
         on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, ImagePrinterError> {
+        let deadline = Deadline::after(self.timeout);
         let render = DxgiRenderContext::new()?;
         // The frames decide the color space of the job, so read them before starting it.
         let image = Image::open(&render, path)?;
@@ -203,7 +215,7 @@ impl FilePrinter for ImagePrinter {
             D2D1_COLOR_SPACE_SRGB
         };
         let job_name = path.file_name().unwrap_or(path.as_ref());
-        let context = render.start_job(&self.printer, &options, job_name, color_space)?;
+        let context = render.start_job(&self.printer, &options, job_name, color_space, deadline)?;
         let converter =
             Converter::new(&context, color_space).map_err(ImagePrinterError::RenderError)?;
         let page_count = u32::try_from(image.frames.len()).unwrap_or(u32::MAX);
@@ -289,5 +301,12 @@ mod tests {
             &device,
             &path,
         );
+    }
+
+    #[test]
+    fn honors_timeout() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.tiff");
+        test_helpers::assert_honors_timeout(ImagePrinter::new(device.clone()), &device, &path);
     }
 }

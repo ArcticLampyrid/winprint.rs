@@ -1,4 +1,4 @@
-use super::{FilePrinter, PrintOutcome, PrintProgress, PrinterDevice};
+use super::{FilePrinter, PrintOutcome, PrintProgress, PrinterDevice, TimedPrinter};
 use crate::ticket::PrintTicket;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
@@ -159,5 +159,25 @@ where
         });
     }));
     assert!(failed.is_err());
+    assert_queue_drains(device);
+}
+
+/// A job completes within a generous timeout, and fails and is removed from the print queue
+/// when its timeout has passed.
+pub fn assert_honors_timeout<P>(mut printer: P, device: &PrinterDevice, path: &Path)
+where
+    P: FilePrinter<Options = PrintTicket> + TimedPrinter,
+    P::Error: Debug,
+{
+    printer.set_timeout(Some(Duration::from_secs(3600)));
+    assert_eq!(
+        printer.print(path, Default::default()).unwrap(),
+        PrintOutcome::Completed
+    );
+    // A paused printer keeps submitted jobs, so only a canceled job leaves the queue.
+    pause_printer(device);
+    printer.set_timeout(Some(Duration::ZERO));
+    let error = printer.print(path, Default::default()).unwrap_err();
+    assert!(format!("{error:?}").contains("TimedOut"), "{error:?}");
     assert_queue_drains(device);
 }

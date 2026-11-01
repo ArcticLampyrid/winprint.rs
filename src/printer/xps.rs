@@ -3,18 +3,21 @@ use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
 use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
+use crate::printer::TimedPrinter;
 use crate::ticket::PrintTicket;
 use crate::utils::wchar;
+use crate::utils::Deadline;
 use scopeguard::defer;
 use std::mem::MaybeUninit;
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::ptr;
+use std::time::Duration;
 use thiserror::Error;
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::{CloseHandle, HANDLE, WAIT_FAILED},
+        Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_TIMEOUT},
         Storage::Xps::{Printing::*, *},
         System::{Com::*, Threading::*},
     },
@@ -47,17 +50,30 @@ pub enum XpsPrinterError {
     /// The print pipeline failed the job.
     #[error("The print job failed")]
     JobFailed(#[source] windows::core::Error),
+    /// The job did not end before its timeout, after the given time.
+    #[error("The print job timed out after {0:?}")]
+    TimedOut(Duration),
 }
 
 /// A printer to print XPS documents.
 pub struct XpsPrinter {
     printer: PrinterDevice,
+    timeout: Option<Duration>,
 }
 
 impl XpsPrinter {
     /// Create a new [`XpsPrinter`] for the given printer device.
     pub fn new(printer: PrinterDevice) -> Self {
-        Self { printer }
+        Self {
+            printer,
+            timeout: None,
+        }
+    }
+}
+
+impl TimedPrinter for XpsPrinter {
+    fn set_timeout(&mut self, timeout: Option<Duration>) {
+        self.timeout = timeout;
     }
 }
 
@@ -70,6 +86,7 @@ impl FilePrinter for XpsPrinter {
         options: PrintTicket,
         on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, XpsPrinterError> {
+        let deadline = Deadline::after(self.timeout);
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             defer! {
@@ -132,6 +149,9 @@ impl FilePrinter for XpsPrinter {
             if on_progress(&PrintProgress::new(0, page_count)).is_break() {
                 return Ok(PrintOutcome::Canceled);
             }
+            if deadline.has_passed() {
+                return Err(XpsPrinterError::TimedOut(deadline.elapsed()));
+            }
             xps_package
                 .WriteToStream(&document_stream, false)
                 .map_err(XpsPrinterError::FailedToWriteDocument)?;
@@ -142,6 +162,7 @@ impl FilePrinter for XpsPrinter {
                 &job,
                 [progress_event, completion_event],
                 page_count,
+                deadline,
                 on_progress,
             )?;
             let _ = scopeguard::ScopeGuard::into_inner(job);
@@ -161,11 +182,13 @@ unsafe fn page_count(package: &IXpsOMPackage) -> windows::core::Result<u32> {
 /// Wait until `job` ends, reporting the pages it has processed out of `page_count` to
 /// `on_progress` until it asks to cancel.
 ///
-/// The job may still complete after a cancel request, so the outcome comes from the job.
+/// The job may still complete after a cancel request, so the outcome comes from the job. Fails
+/// with [`XpsPrinterError::TimedOut`] once `deadline` passes before the job ends.
 unsafe fn wait_for_job(
     job: &IXpsPrintJob,
     events: [HANDLE; 2],
     page_count: u32,
+    deadline: Deadline,
     on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
 ) -> Result<PrintOutcome, XpsPrinterError> {
     let mut cancel_requested = false;
@@ -191,10 +214,20 @@ unsafe fn wait_for_job(
             cancel_requested = true;
             let _ = job.Cancel();
         }
-        if WaitForMultipleObjects(&events, false, INFINITE) == WAIT_FAILED {
-            return Err(XpsPrinterError::FailedToWaitForJob(
-                windows::core::Error::from_thread(),
-            ));
+        // The longest finite wait is one millisecond shorter than `INFINITE`.
+        let wait_ms = deadline.remaining().map_or(INFINITE, |left| {
+            u32::try_from(left.as_millis())
+                .unwrap_or(u32::MAX)
+                .min(INFINITE - 1)
+        });
+        match WaitForMultipleObjects(&events, false, wait_ms) {
+            WAIT_FAILED => {
+                return Err(XpsPrinterError::FailedToWaitForJob(
+                    windows::core::Error::from_thread(),
+                ))
+            }
+            WAIT_TIMEOUT => return Err(XpsPrinterError::TimedOut(deadline.elapsed())),
+            _ => {}
         }
     }
 }
@@ -252,5 +285,12 @@ mod tests {
             &device,
             &path,
         );
+    }
+
+    #[test]
+    fn honors_timeout() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.xps");
+        test_helpers::assert_honors_timeout(XpsPrinter::new(device.clone()), &device, &path);
     }
 }

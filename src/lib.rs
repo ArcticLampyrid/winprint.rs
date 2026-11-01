@@ -113,7 +113,8 @@ pub mod printer;
 pub mod test_utils;
 /// Provides a way to specify the printing preferences.
 pub mod ticket;
-mod utils;
+/// Utilities for printing.
+pub mod utils;
 #[cfg(test)]
 mod tests {
     use ctor::ctor;
