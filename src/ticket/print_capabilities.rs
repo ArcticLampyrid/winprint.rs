@@ -5,7 +5,8 @@ use super::{
         NS_PSF, NS_PSK,
     },
     Collation, Copies, InputBin, JobDuplex, JobPageOrder, JobStapling, PageBorderless,
-    PageDeviceFontSubstitution, PageMediaSize, PageMediaType, PageOrientation, PageOutputColor,
+    PageColorManagement, PageDestinationColorProfile, PageDeviceFontSubstitution,
+    PageIcmRenderingIntent, PageMediaSize, PageMediaType, PageOrientation, PageOutputColor,
     PageOutputQuality, PagePhotoPrintingIntent, PageResolution, PageTrueTypeFontMode,
     PagesPerSheet, PagesPerSheetDirection, PrintTicket, StaticFeaturePathOptionPack,
 };
@@ -205,6 +206,32 @@ impl PrintCapabilities {
     /// This corresponds to the Print Schema's `JobDuplexAllDocumentsContiguously` keyword, not the `DocumentDuplex` keyword.
     pub fn duplexes(&self) -> impl Iterator<Item = JobDuplex> + '_ {
         JobDuplex::list(self)
+    }
+
+    /// Get all supported page color managements.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageColorManagement` keyword.
+    pub fn page_color_managements(&self) -> impl Iterator<Item = PageColorManagement> + '_ {
+        PageColorManagement::list(self)
+    }
+
+    /// Get all supported page destination color profiles.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageDestinationColorProfile` keyword.
+    pub fn page_destination_color_profiles(
+        &self,
+    ) -> impl Iterator<Item = PageDestinationColorProfile> + '_ {
+        PageDestinationColorProfile::list(self)
+    }
+
+    /// Get all supported ICM rendering intents.
+    ///
+    /// # Note
+    /// This corresponds to the Print Schema's `PageICMRenderingIntent` keyword.
+    pub fn page_icm_rendering_intents(&self) -> impl Iterator<Item = PageIcmRenderingIntent> + '_ {
+        PageIcmRenderingIntent::list(self)
     }
 
     /// Get all supported page output colors.
