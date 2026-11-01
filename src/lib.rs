@@ -36,10 +36,9 @@
 //! }
 //! ```
 //!
-//! Then, create a printer and send a file to it. Currently, there are these kinds of printers available:
+//! Then, create a printer and send a file to it. Currently, there are two kinds of printers available:
 //! - [`printer::XpsPrinter`]: For printing XPS files.
 //! - [`printer::PdfiumPrinter`]: For printing PDF files via PDFium library. (Feature `pdfium` must be enabled)
-//! - [`printer::GdiPrinter`]: For printing an RGB image through GDI, when the application manages the colors itself.
 //!
 //! **Note**: The concept *`Printer`* here is a warpper of device for printing specific types of data,
 //! not meaning the printer device.

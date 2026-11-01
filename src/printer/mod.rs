@@ -1,7 +1,6 @@
 mod device;
 mod dxgi;
 mod file;
-mod gdi;
 mod image;
 mod outcome;
 #[cfg(feature = "pdfium")]
@@ -16,7 +15,6 @@ mod xps;
 pub use device::{DefaultDeviceError, EnumDeviceError, FindDeviceError, PrinterDevice};
 pub use dxgi::{DxgiPrintContext, DxgiPrintContextError, DxgiRenderContext};
 pub use file::FilePrinter;
-pub use gdi::{ColorPolicy, GdiOptions, GdiPrinter, GdiPrinterError, RgbImage, SheetRect};
 pub use image::{ImagePrinter, ImagePrinterError};
 pub use outcome::PrintOutcome;
 pub(crate) use outcome::{deleted_from_queue, pipeline_outcome};
