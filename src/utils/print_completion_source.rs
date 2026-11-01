@@ -1,4 +1,5 @@
 use crate::printer::{pipeline_outcome, PrintOutcome};
+use crate::utils::Deadline;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
@@ -62,12 +63,13 @@ impl PrintCompletionWaiter {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-    /// Block until the job ends, or `None` once `timeout` has passed without it ending.
-    pub fn wait_timeout(&self, timeout: Duration) -> Option<JobEnd> {
+    /// Block until the job ends, or `None` once `deadline` has passed without it ending.
+    pub fn wait_until(&self, deadline: Deadline) -> Option<JobEnd> {
         let end = self.slot.end.lock().unwrap_or_else(PoisonError::into_inner);
+        let left = deadline.remaining().unwrap_or(Duration::MAX);
         self.slot
             .ended
-            .wait_timeout_while(end, timeout, |end| end.is_none())
+            .wait_timeout_while(end, left, |end| end.is_none())
             .unwrap_or_else(PoisonError::into_inner)
             .0
             .clone()
@@ -186,18 +188,16 @@ mod tests {
     use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Completed;
 
     #[test]
-    fn wait_timeout_gives_up_on_a_job_that_never_ends() {
+    fn wait_until_gives_up_on_a_job_that_never_ends() {
         let source = PrintCompletionSource::new();
         let started = Instant::now();
-        assert!(source
-            .waiter()
-            .wait_timeout(Duration::from_millis(50))
-            .is_none());
+        let deadline = Deadline::after(Some(Duration::from_millis(50)));
+        assert!(source.waiter().wait_until(deadline).is_none());
         assert!(started.elapsed() >= Duration::from_millis(50));
     }
 
     #[test]
-    fn wait_timeout_returns_as_soon_as_the_job_ends() {
+    fn wait_until_returns_as_soon_as_the_job_ends() {
         let source = PrintCompletionSource::new();
         let waiter = source.waiter();
         let status = PrintDocumentPackageStatus {
@@ -212,7 +212,7 @@ mod tests {
             });
             assert_eq!(
                 waiter
-                    .wait_timeout(Duration::from_secs(30))
+                    .wait_until(Deadline::after(None))
                     .and_then(Result::ok),
                 Some(PrintOutcome::Completed)
             );

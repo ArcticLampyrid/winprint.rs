@@ -4,9 +4,12 @@ use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
 use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
+use crate::printer::TimedPrinter;
 use crate::ticket::PrintTicket;
+use crate::utils::Deadline;
 use std::ops::ControlFlow;
 use std::path::Path;
+use std::time::Duration;
 use thiserror::Error;
 use windows::core::HSTRING;
 use windows::Data::Pdf::PdfDocument;
@@ -70,6 +73,7 @@ pub enum WinPdfPrinterError {
 pub struct WinPdfPrinter {
     printer: PrinterDevice,
     override_render_dpi: Option<(u32, u32)>,
+    timeout: Option<Duration>,
 }
 
 impl WinPdfPrinter {
@@ -78,6 +82,7 @@ impl WinPdfPrinter {
         Self {
             printer,
             override_render_dpi: None,
+            timeout: None,
         }
     }
 }
@@ -91,6 +96,12 @@ impl WinPdfPrinter {
     }
 }
 
+impl TimedPrinter for WinPdfPrinter {
+    fn set_timeout(&mut self, timeout: Option<Duration>) {
+        self.timeout = timeout;
+    }
+}
+
 impl FilePrinter for WinPdfPrinter {
     type Options = PrintTicket;
     type Error = WinPdfPrinterError;
@@ -100,10 +111,12 @@ impl FilePrinter for WinPdfPrinter {
         options: PrintTicket,
         on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, WinPdfPrinterError> {
+        let deadline = Deadline::after(self.timeout);
         let context = DxgiPrintContext::new(
             &self.printer,
             &options,
             path.file_name().unwrap_or(path.as_ref()),
+            deadline,
         )?;
         let dxgi_device = &context.dxgi_device;
         let d2d_context = &context.d2d_context;
@@ -304,5 +317,12 @@ mod tests {
             &device,
             &path,
         );
+    }
+
+    #[test]
+    fn honors_timeout() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_honors_timeout(WinPdfPrinter::new(device.clone()), &device, &path);
     }
 }

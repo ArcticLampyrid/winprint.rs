@@ -7,6 +7,7 @@ use crate::utils::com::ComInitializer;
 use crate::utils::print_completion_source::PrintCompletionSource;
 use crate::utils::print_completion_source::PrintCompletionWaiter;
 use crate::utils::wchar;
+use crate::utils::Deadline;
 use std::cmp::max;
 use std::ffi::OsStr;
 use std::ops::ControlFlow;
@@ -76,16 +77,10 @@ pub enum DxgiPrintContextError {
     /// The print pipeline failed the job.
     #[error("The print job failed")]
     JobFailed(#[source] windows::core::Error),
-    /// The print pipeline did not report the end of the job within the completion timeout.
-    ///
-    /// The job is canceled.
-    #[error("The print job did not end within {0:?}")]
-    JobTimedOut(Duration),
+    /// The job did not end before its timeout, after the given time.
+    #[error("The print job timed out after {0:?}")]
+    TimedOut(Duration),
 }
-
-/// How long [`DxgiPrintContext::close_and_wait`] waits for the print pipeline to report the end
-/// of the job, unless [`DxgiPrintContext::completion_timeout`] says otherwise.
-pub const DEFAULT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
 
 const DEFAULT_DPI: u32 = 300;
 
@@ -189,6 +184,9 @@ impl DxgiRenderContext {
     /// Start a print job drawn with these devices, whose print control writes colors in
     /// `color_space`.
     ///
+    /// The job must end before `deadline`. See [`DxgiPrintContext::checkpoint`] and
+    /// [`DxgiPrintContext::close_and_wait`].
+    ///
     /// Direct2D supports [`D2D1_COLOR_SPACE_SRGB`] and
     /// [`D2D1_COLOR_SPACE_SCRGB`](windows::Win32::Graphics::Direct2D::D2D1_COLOR_SPACE_SCRGB)
     /// here. The print control reads every bitmap in that color space: in scRGB, it takes the
@@ -200,6 +198,7 @@ impl DxgiRenderContext {
         options: &PrintTicket,
         job_name: &OsStr,
         color_space: D2D1_COLOR_SPACE,
+        deadline: Deadline,
     ) -> Result<DxgiPrintContext, DxgiPrintContextError> {
         unsafe {
             let dev_mode = options
@@ -257,7 +256,7 @@ impl DxgiRenderContext {
                 document_target,
                 print_control,
                 completion_waiter,
-                completion_timeout: DEFAULT_COMPLETION_TIMEOUT,
+                deadline,
                 job_ended: false,
                 dpi,
                 render: self,
@@ -275,8 +274,7 @@ pub struct DxgiPrintContext {
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
     completion_waiter: PrintCompletionWaiter,
-    /// How long [`close_and_wait`](Self::close_and_wait) waits for the end of the job.
-    pub completion_timeout: Duration,
+    deadline: Deadline,
     /// Whether the job has ended, so that dropping the context leaves it alone.
     job_ended: bool,
     pub dpi: (u32, u32),
@@ -294,12 +292,21 @@ impl Deref for DxgiPrintContext {
 
 impl DxgiPrintContext {
     /// Create a new print context in sRGB, used for printing via DXGI.
+    ///
+    /// See [`DxgiRenderContext::start_job`] for `deadline`.
     pub fn new(
         device: &PrinterDevice,
         options: &PrintTicket,
         job_name: &OsStr,
+        deadline: Deadline,
     ) -> Result<Self, DxgiPrintContextError> {
-        DxgiRenderContext::new()?.start_job(device, options, job_name, D2D1_COLOR_SPACE_SRGB)
+        DxgiRenderContext::new()?.start_job(
+            device,
+            options,
+            job_name,
+            D2D1_COLOR_SPACE_SRGB,
+            deadline,
+        )
     }
 
     /// Add a page to the job, breaking when the job has been deleted from the print queue.
@@ -321,6 +328,9 @@ impl DxgiPrintContext {
     /// Cancels the job if `requested` breaks, as a progress callback does to cancel it.
     /// Otherwise, checks whether the job has already ended, for example canceled outside this
     /// process. Breaks with the outcome once the job is over.
+    ///
+    /// Fails with [`DxgiPrintContextError::TimedOut`] once the deadline of the job has passed.
+    /// Dropping the context then cancels the job.
     pub fn checkpoint(
         &self,
         requested: ControlFlow<()>,
@@ -331,18 +341,21 @@ impl DxgiPrintContext {
             }
             return Ok(ControlFlow::Break(PrintOutcome::Canceled));
         }
-        self.completion_waiter
-            .poll()
-            .map_or(Ok(ControlFlow::Continue(())), |end| {
-                end.map(ControlFlow::Break)
-                    .map_err(DxgiPrintContextError::JobFailed)
-            })
+        match self.completion_waiter.poll() {
+            Some(end) => end
+                .map(ControlFlow::Break)
+                .map_err(DxgiPrintContextError::JobFailed),
+            None if self.deadline.has_passed() => {
+                Err(DxgiPrintContextError::TimedOut(self.deadline.elapsed()))
+            }
+            None => Ok(ControlFlow::Continue(())),
+        }
     }
 
     /// Close the print context and wait until the print job has been submitted.
     ///
-    /// Gives up with [`DxgiPrintContextError::JobTimedOut`] after
-    /// [`completion_timeout`](Self::completion_timeout), canceling the job.
+    /// Fails with [`DxgiPrintContextError::TimedOut`] if the job does not end before its
+    /// deadline, canceling the job.
     pub fn close_and_wait(mut self) -> Result<PrintOutcome, DxgiPrintContextError> {
         let closed = unsafe { self.print_control.Close() };
         // A job that has ended, such as one canceled outside this process, may fail to close.
@@ -353,12 +366,12 @@ impl DxgiPrintContext {
             }
             _ => self
                 .completion_waiter
-                .wait_timeout(self.completion_timeout)
-                .ok_or(DxgiPrintContextError::JobTimedOut(self.completion_timeout))
+                .wait_until(self.deadline)
+                .ok_or_else(|| DxgiPrintContextError::TimedOut(self.deadline.elapsed()))
                 .and_then(|end| end.map_err(DxgiPrintContextError::JobFailed)),
         };
         // A job that timed out is still unfinished, so dropping the context cancels it.
-        self.job_ended = !matches!(end, Err(DxgiPrintContextError::JobTimedOut(_)));
+        self.job_ended = !matches!(end, Err(DxgiPrintContextError::TimedOut(_)));
         end
     }
 }

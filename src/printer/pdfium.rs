@@ -4,17 +4,20 @@ use crate::printer::FilePrinter;
 use crate::printer::PrintOutcome;
 use crate::printer::PrintProgress;
 use crate::printer::PrinterDevice;
+use crate::printer::TimedPrinter;
 use crate::ticket::PrintTicket;
 use crate::ticket::ToDevModeError;
 use crate::utils::emf::Emf;
 use crate::utils::pdfium::PdfiumCustomDocument;
 use crate::utils::pdfium::PdfiumGuard;
 use crate::utils::wchar;
+use crate::utils::Deadline;
 use scopeguard::defer;
 use std::cell::Cell;
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::ptr;
+use std::time::Duration;
 use std::{fs::File, mem};
 use thiserror::Error;
 use windows::core::HRESULT;
@@ -64,6 +67,9 @@ pub enum PdfiumPrinterError {
     /// EMF playback failed for a page.
     #[error("Failed to playback EMF for page {0}")]
     EmfPlaybackFailed(i32),
+    /// The job did not end before its timeout, after the given time.
+    #[error("The print job timed out after {0:?}")]
+    TimedOut(Duration),
 }
 
 /// A printer that uses Pdfium to print PDF documents.
@@ -77,12 +83,22 @@ pub enum PdfiumPrinterError {
 /// printing conditions, shadows print darker.
 pub struct PdfiumPrinter {
     printer: PrinterDevice,
+    timeout: Option<Duration>,
 }
 
 impl PdfiumPrinter {
     /// Create a new [`PdfiumPrinter`] for the given printer device.
     pub fn new(printer: PrinterDevice) -> Self {
-        Self { printer }
+        Self {
+            printer,
+            timeout: None,
+        }
+    }
+}
+
+impl TimedPrinter for PdfiumPrinter {
+    fn set_timeout(&mut self, timeout: Option<Duration>) {
+        self.timeout = timeout;
     }
 }
 
@@ -104,6 +120,7 @@ impl FilePrinter for PdfiumPrinter {
         options: PrintTicket,
         on_progress: &mut dyn FnMut(&PrintProgress) -> ControlFlow<()>,
     ) -> std::result::Result<PrintOutcome, PdfiumPrinterError> {
+        let deadline = Deadline::after(self.timeout);
         unsafe {
             let dev_mode = options
                 .to_dev_mode(&self.printer)
@@ -173,11 +190,19 @@ impl FilePrinter for PdfiumPrinter {
                 |kind: GET_DEVICE_CAPS_INDEX| -> i32 { GetDeviceCaps(Some(hdc_print), kind) };
             let page_count = FPDF_GetPageCount(document);
             // Leaving early aborts the document, through the guard above.
-            let mut cancel_requested = |pages_ended: i32| {
-                on_progress(&PrintProgress::new(pages_ended as u32, page_count as u32)).is_break()
+            let mut checkpoint = |pages_ended: i32| {
+                if on_progress(&PrintProgress::new(pages_ended as u32, page_count as u32))
+                    .is_break()
+                {
+                    Ok(ControlFlow::Break(PrintOutcome::Canceled))
+                } else if deadline.has_passed() {
+                    Err(PdfiumPrinterError::TimedOut(deadline.elapsed()))
+                } else {
+                    Ok(ControlFlow::Continue(()))
+                }
             };
-            if cancel_requested(0) {
-                return Ok(PrintOutcome::Canceled);
+            if let ControlFlow::Break(outcome) = checkpoint(0)? {
+                return Ok(outcome);
             }
             for page_index in 0..page_count {
                 let page = FPDF_LoadPage(document, page_index);
@@ -244,8 +269,8 @@ impl FilePrinter for PdfiumPrinter {
                 if end_page_ret <= 0 {
                     return Err(PdfiumPrinterError::EndPageFailed(page_index, end_page_ret));
                 }
-                if cancel_requested(page_index + 1) {
-                    return Ok(PrintOutcome::Canceled);
+                if let ControlFlow::Break(outcome) = checkpoint(page_index + 1)? {
+                    return Ok(outcome);
                 }
             }
 
@@ -327,5 +352,12 @@ mod tests {
             &device,
             &path,
         );
+    }
+
+    #[test]
+    fn honors_timeout() {
+        let device = null_device::thread_local();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/test_document.pdf");
+        test_helpers::assert_honors_timeout(PdfiumPrinter::new(device.clone()), &device, &path);
     }
 }
