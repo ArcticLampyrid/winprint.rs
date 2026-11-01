@@ -1,6 +1,7 @@
 use crate::printer::{pipeline_outcome, PrintOutcome};
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 use windows::core::w;
 use windows::core::BSTR;
 use windows::Win32::Foundation::E_INVALIDARG;
@@ -61,15 +62,15 @@ impl PrintCompletionWaiter {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-    /// Block until the job ends.
-    pub fn wait(&self) -> JobEnd {
+    /// Block until the job ends, or `None` once `timeout` has passed without it ending.
+    pub fn wait_timeout(&self, timeout: Duration) -> Option<JobEnd> {
         let end = self.slot.end.lock().unwrap_or_else(PoisonError::into_inner);
         self.slot
             .ended
-            .wait_while(end, |end| end.is_none())
+            .wait_timeout_while(end, timeout, |end| end.is_none())
             .unwrap_or_else(PoisonError::into_inner)
+            .0
             .clone()
-            .expect("the job has ended")
     }
 }
 
@@ -175,5 +176,46 @@ impl IDispatch_Impl for PrintCompletionSource_Impl {
         } else {
             Err(windows::core::Error::from_hresult(DISP_E_MEMBERNOTFOUND))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+    use windows::Win32::Storage::Xps::Printing::PrintDocumentPackageCompletion_Completed;
+
+    #[test]
+    fn wait_timeout_gives_up_on_a_job_that_never_ends() {
+        let source = PrintCompletionSource::new();
+        let started = Instant::now();
+        assert!(source
+            .waiter()
+            .wait_timeout(Duration::from_millis(50))
+            .is_none());
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn wait_timeout_returns_as_soon_as_the_job_ends() {
+        let source = PrintCompletionSource::new();
+        let waiter = source.waiter();
+        let status = PrintDocumentPackageStatus {
+            Completion: PrintDocumentPackageCompletion_Completed,
+            ..Default::default()
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(20));
+                let sink: IPrintDocumentPackageStatusEvent = source.into();
+                unsafe { sink.PackageStatusUpdated(&status) }.unwrap();
+            });
+            assert_eq!(
+                waiter
+                    .wait_timeout(Duration::from_secs(30))
+                    .and_then(Result::ok),
+                Some(PrintOutcome::Completed)
+            );
+        });
     }
 }

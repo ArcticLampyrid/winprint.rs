@@ -12,6 +12,7 @@ use std::ffi::OsStr;
 use std::ops::ControlFlow;
 use std::ops::Deref;
 use std::ptr;
+use std::time::Duration;
 use thiserror::Error;
 use windows::core::Interface;
 use windows::core::PCWSTR;
@@ -75,7 +76,16 @@ pub enum DxgiPrintContextError {
     /// The print pipeline failed the job.
     #[error("The print job failed")]
     JobFailed(#[source] windows::core::Error),
+    /// The print pipeline did not report the end of the job within the completion timeout.
+    ///
+    /// The job is canceled.
+    #[error("The print job did not end within {0:?}")]
+    JobTimedOut(Duration),
 }
+
+/// How long [`DxgiPrintContext::close_and_wait`] waits for the print pipeline to report the end
+/// of the job, unless [`DxgiPrintContext::completion_timeout`] says otherwise.
+pub const DEFAULT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120);
 
 const DEFAULT_DPI: u32 = 300;
 
@@ -247,6 +257,7 @@ impl DxgiRenderContext {
                 document_target,
                 print_control,
                 completion_waiter,
+                completion_timeout: DEFAULT_COMPLETION_TIMEOUT,
                 job_ended: false,
                 dpi,
                 render: self,
@@ -264,6 +275,8 @@ pub struct DxgiPrintContext {
     pub document_target: IPrintDocumentPackageTarget,
     pub print_control: ID2D1PrintControl,
     completion_waiter: PrintCompletionWaiter,
+    /// How long [`close_and_wait`](Self::close_and_wait) waits for the end of the job.
+    pub completion_timeout: Duration,
     /// Whether the job has ended, so that dropping the context leaves it alone.
     job_ended: bool,
     pub dpi: (u32, u32),
@@ -327,6 +340,9 @@ impl DxgiPrintContext {
     }
 
     /// Close the print context and wait until the print job has been submitted.
+    ///
+    /// Gives up with [`DxgiPrintContextError::JobTimedOut`] after
+    /// [`completion_timeout`](Self::completion_timeout), canceling the job.
     pub fn close_and_wait(mut self) -> Result<PrintOutcome, DxgiPrintContextError> {
         let closed = unsafe { self.print_control.Close() };
         // A job that has ended, such as one canceled outside this process, may fail to close.
@@ -337,10 +353,12 @@ impl DxgiPrintContext {
             }
             _ => self
                 .completion_waiter
-                .wait()
-                .map_err(DxgiPrintContextError::JobFailed),
+                .wait_timeout(self.completion_timeout)
+                .ok_or(DxgiPrintContextError::JobTimedOut(self.completion_timeout))
+                .and_then(|end| end.map_err(DxgiPrintContextError::JobFailed)),
         };
-        self.job_ended = true;
+        // A job that timed out is still unfinished, so dropping the context cancels it.
+        self.job_ended = !matches!(end, Err(DxgiPrintContextError::JobTimedOut(_)));
         end
     }
 }
