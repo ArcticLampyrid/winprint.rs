@@ -22,8 +22,8 @@ use windows::{
 
 /// Defines a virtual "print-to-file" device backed by a built-in Windows driver.
 ///
-/// Implement this trait to expose additional file-based drivers. Two built-in providers are
-/// shipped: [`PwgRaster`] and [`Pdf`].
+/// Implement this trait to expose additional file-based drivers. Built-in providers include
+/// [`PwgRaster`], [`Pdf`], and [`PublisherColor`].
 pub trait FilePrinterProvider {
     /// Returns the Windows driver name (as accepted by `Add-Printer -DriverName`) to use for the
     /// virtual printer.
@@ -43,6 +43,15 @@ pub struct Pdf;
 impl FilePrinterProvider for Pdf {
     fn driver_name() -> &'static str {
         "Microsoft Print To PDF"
+    }
+}
+
+/// A built-in [`FilePrinterProvider`] backed by the `MS Publisher Color Printer`
+/// generic PostScript driver.
+pub struct PublisherColor;
+impl FilePrinterProvider for PublisherColor {
+    fn driver_name() -> &'static str {
+        "MS Publisher Color Printer"
     }
 }
 
