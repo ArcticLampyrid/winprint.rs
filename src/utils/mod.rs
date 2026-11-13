@@ -1,5 +1,6 @@
 pub(crate) mod com;
 mod deadline;
+pub(crate) mod dev_mode_buffer;
 pub(crate) mod emf;
 #[cfg(feature = "pdfium")]
 pub(crate) mod pdfium;

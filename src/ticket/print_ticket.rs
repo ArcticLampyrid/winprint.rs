@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     printer::PrinterDevice,
-    utils::{stream::read_com_stream, wchar},
+    utils::{dev_mode_buffer::DevModeBuffer, stream::read_com_stream, wchar},
 };
 use scopeguard::defer;
 use std::ptr;
@@ -13,7 +13,7 @@ use windows::{
     core::{BSTR, PCWSTR},
     Win32::{
         Graphics::{
-            Gdi::{DEVMODEA, DEVMODEW, DM_IN_BUFFER, DM_OUT_BUFFER},
+            Gdi::{DEVMODEA, DM_IN_BUFFER, DM_OUT_BUFFER},
             Printing::{
                 ClosePrinter, DocumentPropertiesW, OpenPrinterW,
                 PrintTicket::{
@@ -216,12 +216,12 @@ impl PrintTicket {
             // See also: https://chromium.googlesource.com/chromium/src/+/refs/tags/124.0.6347.1/printing/backend/win_helper.cc#586
             buffer_size = buffer_size * 2 + 8192;
 
-            let mut buffer = vec![0u8; buffer_size as usize];
+            let mut buffer = DevModeBuffer::zeroed(buffer_size as usize);
             if DocumentPropertiesW(
                 None,
                 printer_handle,
                 PCWSTR(printer_name.as_ptr()),
-                Some(buffer.as_mut_ptr() as *mut _),
+                Some(buffer.as_mut_dev_mode_ptr()),
                 Some(dev_mode_data as *mut _),
                 (DM_IN_BUFFER | DM_OUT_BUFFER).0,
             ) != IDOK.0
@@ -229,12 +229,12 @@ impl PrintTicket {
                 return Err(ToDevModeError::FailedToCorrectDevMode);
             }
 
-            Ok(buffer)
+            Ok(buffer.into())
         }
     }
 }
 
-fn default_dev_mode(device: &PrinterDevice) -> Result<Vec<u8>, FromDevModeError> {
+fn default_dev_mode(device: &PrinterDevice) -> Result<DevModeBuffer, FromDevModeError> {
     unsafe {
         let printer_name = wchar::to_wide_chars(device.os_name());
         let mut printer_handle = PRINTER_HANDLE::default();
@@ -260,12 +260,12 @@ fn default_dev_mode(device: &PrinterDevice) -> Result<Vec<u8>, FromDevModeError>
             return Err(FromDevModeError::FailedToReadDevMode);
         }
 
-        let mut dev_mode = vec![0u8; dev_mode_size as usize];
+        let mut dev_mode = DevModeBuffer::zeroed(dev_mode_size as usize);
         if DocumentPropertiesW(
             None,
             printer_handle,
             PCWSTR(printer_name.as_ptr()),
-            Some(dev_mode.as_mut_ptr() as *mut DEVMODEW),
+            Some(dev_mode.as_mut_dev_mode_ptr()),
             None,
             DM_OUT_BUFFER.0,
         ) != IDOK.0
