@@ -30,6 +30,18 @@ impl DevModeBuffer {
         Self { ptr, layout }
     }
 
+    /// Copy `data` into a new buffer, padded with zeros to one whole
+    /// `DEVMODEW` if `data` is shorter.
+    pub fn copy_from(data: &[u8]) -> Self {
+        let mut buffer = Self::zeroed(data.len());
+        buffer[..data.len()].copy_from_slice(data);
+        buffer
+    }
+
+    pub fn as_dev_mode_ptr(&self) -> *const DEVMODEW {
+        self.ptr.as_ptr().cast()
+    }
+
     pub fn as_mut_dev_mode_ptr(&mut self) -> *mut DEVMODEW {
         self.ptr.as_ptr().cast()
     }
@@ -88,5 +100,15 @@ mod tests {
         assert_eq!(large.len(), 9000);
         assert!(large.as_ptr().cast::<DEVMODEW>().is_aligned());
         assert!(large.iter().all(|&byte| byte == 0));
+    }
+
+    #[test]
+    fn copy_from_keeps_the_data_and_pads_with_zeros() {
+        let data: Vec<u8> = (1..=100).collect();
+        let copy = DevModeBuffer::copy_from(&data[1..]);
+        assert!(copy.as_ptr().cast::<DEVMODEW>().is_aligned());
+        assert_eq!(copy.len(), size_of::<DEVMODEW>());
+        assert_eq!(&copy[..data.len() - 1], &data[1..]);
+        assert!(copy[data.len() - 1..].iter().all(|&byte| byte == 0));
     }
 }
