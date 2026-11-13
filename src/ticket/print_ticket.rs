@@ -260,7 +260,9 @@ fn default_dev_mode(device: &PrinterDevice) -> Result<Vec<u8>, FromDevModeError>
             return Err(FromDevModeError::FailedToReadDevMode);
         }
 
-        let mut dev_mode = vec![0u8; dev_mode_size as usize];
+        // Some drivers report a size smaller than `dmSize + dmDriverExtra`.
+        // See also: https://chromium.googlesource.com/chromium/src/+/refs/tags/124.0.6347.1/printing/backend/win_helper.cc#586
+        let mut dev_mode = vec![0u8; dev_mode_size as usize * 2 + 8192];
         if DocumentPropertiesW(
             None,
             printer_handle,
