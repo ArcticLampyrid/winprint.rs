@@ -92,6 +92,8 @@ mod pdfium {
             target_path.to_str().unwrap()
         );
         println!("cargo:rustc-link-lib=dylib=pdfium");
+        // Dependent build scripts read this as `DEP_PDFIUM_BINARIES_DIR` to bundle `pdfium.dll`.
+        println!("cargo:binaries_dir={}", target_path.to_str().unwrap());
         Ok(())
     }
 
