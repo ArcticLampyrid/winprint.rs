@@ -105,6 +105,9 @@
 //!
 //! # Features
 //! - `pdfium`: Enable PDFium support for printing PDF files.
+//!   The build script downloads the PDFium binaries.
+//!   A build script of a direct dependent can read their directory from `DEP_PDFIUM_BINARIES_DIR`,
+//!   for example to bundle `pdfium.dll` with an application.
 
 mod bindings;
 /// Provides a way to print various types of data to a printer device.

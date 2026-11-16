@@ -10,6 +10,7 @@ license = "BSD-3-Clause"
 readme = "README.md"
 documentation = "https://docs.rs/winprint"
 repository = "https://github.com/ArcticLampyrid/winprint.rs/"
+links = "pdfium"
 
 [dependencies]
 scopeguard = "1"
